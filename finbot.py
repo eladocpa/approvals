@@ -17,6 +17,7 @@ def url_id(data_id):
 
 
 def get_driver():
+    import shutil
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
@@ -28,13 +29,29 @@ def get_driver():
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
 
-    # בענן (Railway) — Chrome מותקן ב-/usr/bin/chromium
-    chromium_path = "/usr/bin/chromium"
-    if os.path.exists(chromium_path):
-        opts.binary_location = chromium_path
-        service = Service("/usr/bin/chromedriver")
-        return webdriver.Chrome(service=service, options=opts)
+    # מצא את נתיב Chromium — בדוק נתיבים קבועים ואחר כך PATH
+    for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser",
+              "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"]:
+        if os.path.exists(p):
+            opts.binary_location = p
+            break
+    else:
+        found = (shutil.which("chromium") or shutil.which("chromium-browser")
+                 or shutil.which("google-chrome"))
+        if found:
+            opts.binary_location = found
 
+    # מצא את chromedriver — העדף את המותקן במערכת על פני הורדה אוטומטית
+    chromedriver_path = None
+    for p in ["/usr/bin/chromedriver", "/usr/lib/chromium/chromedriver"]:
+        if os.path.exists(p):
+            chromedriver_path = p
+            break
+    if not chromedriver_path:
+        chromedriver_path = shutil.which("chromedriver")
+
+    if chromedriver_path:
+        return webdriver.Chrome(service=Service(chromedriver_path), options=opts)
     return webdriver.Chrome(options=opts)
 
 
