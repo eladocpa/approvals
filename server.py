@@ -21,8 +21,8 @@ except Exception:
 
 app = Flask(__name__)
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-TAMAT_PDF    = os.path.join(BASE_DIR, "templates", "tamat.pdf")
-MORTGAGE_PDF = os.path.join(BASE_DIR, "templates", "mortgage.pdf")
+TAMAT_PDF    = os.path.join(BASE_DIR, "templates", "daycare_daycare-subsidies-2024-2025_appendix-4-support-tests.pdf")
+MORTGAGE_PDF = os.path.join(BASE_DIR, "templates", "אישורי משכנתא.pdf")
 
 SCALE  = 3
 PDF_W  = 595.32
