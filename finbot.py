@@ -19,9 +19,22 @@ def url_id(data_id):
 def get_driver():
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
     opts = Options()
+    opts.add_argument("--headless=new")
     opts.add_argument("--window-size=1400,900")
     opts.add_argument("--disable-notifications")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+
+    # בענן (Railway) — Chrome מותקן ב-/usr/bin/chromium
+    chromium_path = "/usr/bin/chromium"
+    if os.path.exists(chromium_path):
+        opts.binary_location = chromium_path
+        service = Service("/usr/bin/chromedriver")
+        return webdriver.Chrome(service=service, options=opts)
+
     return webdriver.Chrome(options=opts)
 
 
