@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מחולל אישורים פיננסיים</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0f2744;
+    --navy-light: #1a3c6e;
+    --navy-mid: #163160;
+    --gold: #c9a84c;
+    --gold-light: #e8c96a;
+    --cream: #f8f6f0;
+    --white: #ffffff;
+    --text: #1a1a2e;
+    --muted: #6b7280;
+    --border: #e2ddd5;
+    --success: #16a34a;
+    --error: #dc2626;
+    --radius: 10px;
+    --shadow: 0 4px 24px rgba(15,39,68,.10);
+    --shadow-lg: 0 8px 40px rgba(15,39,68,.16);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Heebo', sans-serif;
+    background: var(--cream);
+    color: var(--text);
+    min-height: 100vh;
+    direction: rtl;
+  }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 60%, #1e4a8a 100%);
+    padding: 28px 40px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    box-shadow: 0 2px 20px rgba(0,0,0,.25);
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: '';
+    position: absolute;
+    left: -60px; top: -60px;
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    background: rgba(201,168,76,.08);
+    pointer-events: none;
+  }
+  .header-icon {
+    width: 48px; height: 48px;
+    background: var(--gold);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(201,168,76,.4);
+  }
+  header h1 {
+    color: var(--white);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .3px;
+  }
+  header p {
+    color: rgba(255,255,255,.6);
+    font-size: 13px;
+    margin-top: 2px;
+    font-weight: 300;
+  }
+
+  /* ── Layout ── */
+  .container {
+    max-width: 780px;
+    margin: 36px auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── Cert type tabs ── */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 28px;
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 6px;
+    box-shadow: var(--shadow);
+  }
+  .tab {
+    flex: 1;
+    padding: 11px 10px;
+    border: none;
+    background: transparent;
+    border-radius: 7px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .2s;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .tab:hover { background: var(--cream); color: var(--navy); }
+  .tab.active {
+    background: var(--navy);
+    color: var(--white);
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(15,39,68,.25);
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--white);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: linear-gradient(90deg, var(--navy) 0%, var(--navy-light) 100%);
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-header span { font-size: 16px; }
+  .card-header h2 {
+    color: var(--white);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+  .card-body {
+    padding: 22px;
+  }
+
+  /* ── Grid ── */
+  .grid { display: grid; gap: 14px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ── Field ── */
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--navy);
+    letter-spacing: .3px;
+  }
+  .field input {
+    height: 40px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    padding: 0 12px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--white);
+    direction: rtl;
+    transition: border-color .15s, box-shadow .15s;
+    outline: none;
+  }
+  .field input:focus {
+    border-color: var(--navy-light);
+    box-shadow: 0 0 0 3px rgba(26,60,110,.10);
+  }
+  .field input::placeholder { color: #b0b7c3; }
+  .field input.required-empty {
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px rgba(220,38,38,.10);
+  }
+
+  /* ── Dynamic section ── */
+  #dynamic-section { display: none; }
+  #dynamic-section.visible { display: block; }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 0 16px;
+  }
+
+  /* ── Submit ── */
+  .submit-area {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .btn-generate {
+    flex: 1;
+    height: 52px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+    color: var(--white);
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Heebo', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    letter-spacing: .3px;
+    box-shadow: 0 4px 16px rgba(15,39,68,.25);
+  }
+  .btn-generate:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 24px rgba(15,39,68,.35);
+  }
+  .btn-generate:active { transform: translateY(0); }
+  .btn-generate:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-generate .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    display: none;
+  }
+  .btn-generate.loading .spinner { display: block; }
+  .btn-generate.loading .btn-text { display: none; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Status ── */
+  .status {
+    display: none;
+    padding: 12px 18px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .status.success {
+    display: flex;
+    background: #dcfce7;
+    color: var(--success);
+    border: 1px solid #bbf7d0;
+  }
+  .status.error {
+    display: flex;
+    background: #fee2e2;
+    color: var(--error);
+    border: 1px solid #fecaca;
+  }
+
+  /* ── Gold accent line ── */
+  .accent-bar {
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold));
+    border-radius: 0 0 3px 3px;
+    margin-bottom: 28px;
+  }
+
+  @media (max-width: 560px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    header { padding: 20px; }
+    .container { padding: 0 12px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-icon">📋</div>
+  <div>
+    <h1>מחולל אישורים פיננסיים</h1>
+    <p>מילוי אוטומטי של טפסים רשמיים · תמ"ת ומשכנתא</p>
+  </div>
+</header>
+
+<div class="container">
+  <div class="accent-bar"></div>
+
+  <!-- FinBot fetch section -->
+  <div class="card" id="finbot-card">
+    <div class="card-header"><span>🔗</span><h2>שליפה אוטומטית מ-FinBot</h2></div>
+    <div class="card-body">
+      <div class="grid grid-2">
+        <div class="field">
+          <label>שם לקוח</label>
+          <input id="finbot_client" type="text" placeholder="הקלד שם לקוח לחיפוש...">
+        </div>
+        <div class="field">
+          <label>שנת דוח</label>
+          <input id="finbot_year" type="text" value="2025" placeholder="2025">
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn-generate" style="max-width:280px;height:44px;font-size:14px" onclick="fetchFromFinbot()">
+          <span class="spinner"></span>
+          <span class="btn-text">⬇ שלוף נתונים מ-FinBot</span>
+        </button>
+      </div>
+      <div class="status" id="finbot-status"></div>
+    </div>
+  </div>
+
+  <!-- Cert type -->
+  <div class="tabs">
+    <button class="tab active" onclick="setType('tamat')" id="tab-tamat">נספח 4 — תמ"ת</button>
+    <button class="tab" onclick="setType('mortgage_v1')" id="tab-mortgage_v1">משכנתא — דוח שהוגש</button>
+    <button class="tab" onclick="setType('mortgage_v2')" id="tab-mortgage_v2">משכנתא — דוח שטרם הוגש</button>
+  </div>
+
+  <!-- Accountant -->
+  <div class="card">
+    <div class="card-header"><span>🏢</span><h2>פרטי רואה החשבון / יועץ המס</h2></div>
+    <div class="card-body">
+      <div class="grid grid-2">
+        <div class="field">
+          <label>שם מלא *</label>
+          <input id="accountant_name" type="text" placeholder="ישראל ישראלי">
+        </div>
+        <div class="field">
+          <label>מספר רישיון</label>
+          <input id="license_number" type="text" placeholder="12345">
+        </div>
+        <div class="field">
+          <label>טלפון</label>
+          <input id="phone" type="text" placeholder="052-1234567">
+        </div>
+        <div class="field">
+          <label>כתובת</label>
+          <input id="address" type="text" placeholder="הרצל 1, תל אביב">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client -->
+  <div class="card">
+    <div class="card-header"><span>👤</span><h2>פרטי הלקוח</h2></div>
+    <div class="card-body">
+      <div class="grid grid-2">
+        <div class="field">
+          <label>שם מלא *</label>
+          <input id="client_name" type="text" placeholder="שרה לוי">
+        </div>
+        <div class="field">
+          <label>תעודת זהות</label>
+          <input id="client_id" type="text" placeholder="123456789">
+        </div>
+        <div class="field">
+          <label>שם העסק</label>
+          <input id="business_name" type="text" placeholder="מכולת לוי בע&quot;מ">
+        </div>
+        <div class="field">
+          <label>מספר ע.מ / ע.פ</label>
+          <input id="vat_number" type="text" placeholder="123456789">
+        </div>
+        <div class="field" style="grid-column: span 2">
+          <label>כתובת עסק</label>
+          <input id="business_address" type="text" placeholder="ביאליק 5, רחובות">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic section (cert-type specific) -->
+  <div class="card" id="dynamic-section">
+    <div class="card-header"><span id="dynamic-icon">📁</span><h2 id="dynamic-title">פרטים נוספים</h2></div>
+    <div class="card-body" id="dynamic-body"></div>
+  </div>
+
+  <!-- Financial -->
+  <div class="card">
+    <div class="card-header"><span>💰</span><h2>נתונים פיננסיים</h2></div>
+    <div class="card-body">
+      <div class="grid grid-3">
+        <div class="field">
+          <label>מחזור הכנסות (ש"ח)</label>
+          <input id="turnover" type="text" placeholder="250,000">
+        </div>
+        <div class="field">
+          <label>הכנסה חייבת / רווח (ש"ח)</label>
+          <input id="net_income" type="text" placeholder="120,000">
+        </div>
+        <div class="field">
+          <label>מס הכנסה (ש"ח)</label>
+          <input id="income_tax" type="text" placeholder="18,000">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="submit-area">
+    <button class="btn-generate" id="btn-generate" onclick="generate()">
+      <span class="spinner"></span>
+      <span class="btn-text">⬇ צור אישור PDF</span>
+    </button>
+  </div>
+  <div class="status" id="status"></div>
+
+</div>
+
+<script>
+let currentType = 'tamat';
+
+const DYNAMIC_CONFIGS = {
+  tamat: {
+    icon: '🗂',
+    title: 'פרטי העסק — תמ"ת',
+    fields: `
+      <div class="grid grid-2">
+        <div class="field">
+          <label>מעמד בעסק</label>
+          <input id="business_role" type="text" value="בעל עסק" placeholder="בעל עסק / שותף / בן זוג עוזר">
+        </div>
+        <div class="field">
+          <label>תאריך תחילת מעמד</label>
+          <input id="role_start_date" type="text" placeholder="01/01/2020">
+        </div>
+        <div class="field">
+          <label>תאריך פתיחת עסק — מס הכנסה</label>
+          <input id="income_tax_open_date" type="text" placeholder="01/01/2020">
+        </div>
+        <div class="field">
+          <label>תאריך פתיחת עסק — מע"מ</label>
+          <input id="vat_open_date" type="text" placeholder="01/01/2020">
+        </div>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:12px">תקופת הדיווח</p>
+      <div class="grid grid-3">
+        <div class="field"><label>מחודש</label><input id="from_month" type="text" placeholder="01"></div>
+        <div class="field"><label>שנה מ</label><input id="from_year" type="text" placeholder="2024"></div>
+        <div class="field"></div>
+        <div class="field"><label>ועד חודש</label><input id="to_month" type="text" placeholder="12"></div>
+        <div class="field"><label>שנה עד</label><input id="to_year" type="text" placeholder="2024"></div>
+        <div class="field"><label>סכום הכנסות (לתמ"ת)</label><input id="total_income" type="text" placeholder="180,000"></div>
+      </div>
+    `
+  },
+  mortgage_v1: {
+    icon: '🏦',
+    title: 'פרטי הדוח — דוח שהוגש לרשויות',
+    fields: `
+      <div class="grid grid-2">
+        <div class="field">
+          <label>שם הבנק</label>
+          <input id="bank_name" type="text" placeholder="בנק הפועלים">
+        </div>
+        <div class="field">
+          <label>שנת הדוח שהוגש</label>
+          <input id="report_year" type="text" placeholder="2023">
+        </div>
+        <div class="field">
+          <label>תאריך הגשת הדוח</label>
+          <input id="report_submit_date" type="text" placeholder="15/04/2024">
+        </div>
+        <div class="field">
+          <label>שם משרד השומה</label>
+          <input id="tax_office" type="text" placeholder="תל אביב">
+        </div>
+        <div class="field">
+          <label>נקודות זיכוי</label>
+          <input id="credit_points" type="text" placeholder="2.25">
+        </div>
+      </div>
+    `
+  },
+  mortgage_v2: {
+    icon: '🏦',
+    title: 'פרטי הדוח — דוח שטרם הוגש',
+    fields: `
+      <div class="grid grid-2">
+        <div class="field">
+          <label>שם הבנק</label>
+          <input id="bank_name" type="text" placeholder="בנק לאומי">
+        </div>
+        <div class="field">
+          <label>מספר חודשים בתקופה</label>
+          <input id="period_months" type="text" placeholder="12">
+        </div>
+        <div class="field">
+          <label>תאריך סיום תקופה</label>
+          <input id="period_end_date" type="text" placeholder="31/12/2024">
+        </div>
+        <div class="field">
+          <label>שנת הדוח הקודם</label>
+          <input id="prev_report_year" type="text" placeholder="2022">
+        </div>
+        <div class="field">
+          <label>תאריך הגשת הדוח הקודם</label>
+          <input id="prev_submit_date" type="text" placeholder="15/04/2023">
+        </div>
+        <div class="field">
+          <label>שם משרד השומה</label>
+          <input id="tax_office" type="text" placeholder="ירושלים">
+        </div>
+        <div class="field">
+          <label>נקודות זיכוי</label>
+          <input id="credit_points" type="text" placeholder="2.25">
+        </div>
+      </div>
+    `
+  }
+};
+
+function setType(type) {
+  currentType = type;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + type).classList.add('active');
+  const cfg = DYNAMIC_CONFIGS[type];
+  document.getElementById('dynamic-icon').textContent = cfg.icon;
+  document.getElementById('dynamic-title').textContent = cfg.title;
+  document.getElementById('dynamic-body').innerHTML = cfg.fields;
+  document.getElementById('dynamic-section').classList.add('visible');
+  setStatus('');
+}
+
+function val(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+function showStatus(msg, type) {
+  const s = document.getElementById('status');
+  s.className = 'status ' + type;
+  s.innerHTML = (type === 'success' ? '✅ ' : '❌ ') + msg;
+}
+
+function setStatus(msg, type) {
+  const s = document.getElementById('status');
+  if (!msg) { s.className = 'status'; return; }
+  showStatus(msg, type);
+}
+
+// ── FinBot integration ─────────────────────────────────────────
+let finbotClients = [];
+
+async function fetchFromFinbot() {
+  const clientName = document.getElementById('finbot_client').value.trim();
+  const year       = document.getElementById('finbot_year').value.trim() || '2025';
+  const status     = document.getElementById('finbot-status');
+
+  if (!clientName) {
+    status.textContent = 'יש להזין שם לקוח';
+    status.className = 'status error';
+    return;
+  }
+
+  const matched = finbotClients.find(c =>
+    c.biz_name && (c.biz_name.includes(clientName) || clientName.includes(c.biz_name.substring(0,4)))
+  );
+  const dataId = matched ? matched.data_id : '1';
+
+  status.textContent = '⏳ שולף נתונים מ-FinBot... (כ-20 שניות)';
+  status.className = 'status loading';
+
+  try {
+    const res = await fetch('/fetch_client', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ data_id: dataId, year })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    set('business_name', data.business_name);
+    set('client_name',   data.owner_name);
+    set('vat_number',    data.vat_number);
+    set('turnover',      data.turnover);
+    set('net_income',    data.net_income);
+    set('total_income',  data.turnover);
+    set('from_year',     year);
+    set('to_year',       year);
+    set('from_month',    '01');
+    set('to_month',      '12');
+
+    status.textContent = `✅ נתונים נשלפו! מחזור: ${data.turnover || '—'} ₪  |  רווח: ${data.net_income || '—'} ₪`;
+    status.className = 'status success';
+  } catch(e) {
+    status.textContent = `❌ שגיאה: ${e.message}`;
+    status.className = 'status error';
+  }
+}
+
+// טען לקוחות ברקע בטעינת הדף
+window.addEventListener('load', () => {
+  fetch('/clients').then(r => r.json()).then(data => {
+    finbotClients = data.clients || [];
+    const dl = document.createElement('datalist');
+    dl.id = 'finbot-clients-list';
+    document.body.appendChild(dl);
+    finbotClients.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.biz_name || '';
+      dl.appendChild(opt);
+    });
+    const inp = document.getElementById('finbot_client');
+    if (inp) inp.setAttribute('list', 'finbot-clients-list');
+  }).catch(() => {});
+});
+
+// ── Certificate generation ──────────────────────────────────────
+async function generate() {
+  const required = ['accountant_name', 'client_name'];
+  let ok = true;
+  required.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el.value.trim()) { el.classList.add('required-empty'); ok = false; }
+    else el.classList.remove('required-empty');
+  });
+  if (!ok) { showStatus('יש למלא את שדות החובה המסומנים', 'error'); return; }
+
+  const btn = document.getElementById('btn-generate');
+  btn.classList.add('loading'); btn.disabled = true;
+  setStatus('');
+
+  const data = {
+    cert_type: currentType,
+    accountant_name: val('accountant_name'),
+    license_number:  val('license_number'),
+    phone:           val('phone'),
+    address:         val('address'),
+    client_name:     val('client_name'),
+    client_id:       val('client_id'),
+    business_name:   val('business_name'),
+    vat_number:      val('vat_number'),
+    business_address:val('business_address'),
+    turnover:        val('turnover'),
+    total_income:    val('turnover'),
+    net_income:      val('net_income'),
+    income_tax:      val('income_tax'),
+    business_role:         val('business_role'),
+    role_start_date:       val('role_start_date'),
+    income_tax_open_date:  val('income_tax_open_date'),
+    vat_open_date:         val('vat_open_date'),
+    from_month:            val('from_month'),
+    from_year:             val('from_year'),
+    to_month:              val('to_month'),
+    to_year:               val('to_year'),
+    bank_name:             val('bank_name'),
+    report_year:           val('report_year'),
+    report_submit_date:    val('report_submit_date'),
+    tax_office:            val('tax_office'),
+    credit_points:         val('credit_points'),
+    period_months:         val('period_months'),
+    period_end_date:       val('period_end_date'),
+    prev_report_year:      val('prev_report_year'),
+    prev_submit_date:      val('prev_submit_date'),
+  };
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error: 'שגיאה לא ידועה'}));
+      showStatus('שגיאה: ' + err.error, 'error');
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `אישור_${data.client_name.replace(/ /g,'_')}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus('האישור נוצר והורד בהצלחה!', 'success');
+  } catch (e) {
+    showStatus('שגיאת חיבור — ודא שהשרת פועל', 'error');
+  } finally {
+    btn.classList.remove('loading'); btn.disabled = false;
+  }
+}
+
+// Init
+setType('tamat');
+</script>
+
+</body>
+</html>
