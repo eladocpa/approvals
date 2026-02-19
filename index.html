@@ -270,6 +270,52 @@
     margin-bottom: 28px;
   }
 
+  /* ── Period selector ── */
+  .period-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    background: var(--white);
+    cursor: pointer;
+    font-family: 'Heebo', sans-serif;
+    font-size: 12px;
+    color: var(--navy);
+    transition: border-color .15s, background .15s;
+    direction: rtl;
+  }
+  .period-btn:hover { border-color: var(--navy-light); background: var(--cream); }
+  .period-btn.selected { border-color: var(--gold); background: #fdf8ec; font-weight: 600; }
+  .period-months-badge {
+    background: var(--navy);
+    color: white;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .period-btn.selected .period-months-badge { background: var(--gold); }
+  .monthly-bar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 56px;
+    margin-bottom: 8px;
+  }
+  .monthly-bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; }
+  .monthly-bar {
+    width: 100%;
+    background: var(--navy-light);
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+    transition: background .15s;
+  }
+  .monthly-bar.zero { background: #e5e7eb; }
+  .monthly-bar-label { font-size: 9px; color: var(--muted); margin-top: 3px; }
+
   @media (max-width: 560px) {
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
     header { padding: 20px; }
@@ -311,6 +357,14 @@
         </button>
       </div>
       <div class="status" id="finbot-status"></div>
+
+      <!-- Period selector — מוצג רק לתמ"ת אחרי שליפה חודשית -->
+      <div id="period-selector" style="display:none; margin-top:16px; padding-top:14px; border-top:1px solid var(--border)">
+        <p style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px">📊 הכנסות לפי חודש:</p>
+        <div id="monthly-bars" class="monthly-bar-row"></div>
+        <p style="font-size:12px;font-weight:600;color:var(--navy);margin:10px 0 8px">בחר תקופה רצופה לאישור תמ"ת:</p>
+        <div id="periods-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
     </div>
   </div>
 
@@ -527,6 +581,10 @@ function setType(type) {
   document.getElementById('dynamic-body').innerHTML = cfg.fields;
   document.getElementById('dynamic-section').classList.add('visible');
   setStatus('');
+
+  // הצג/הסתר סלקטור תקופות לפי סוג אישור
+  const periodSel = document.getElementById('period-selector');
+  if (type !== 'tamat') periodSel.style.display = 'none';
 }
 
 function val(id) {
@@ -548,11 +606,13 @@ function setStatus(msg, type) {
 
 // ── FinBot integration ─────────────────────────────────────────
 let finbotClients = [];
+let _lastFetchYear = '2025';
 
 async function fetchFromFinbot() {
   const clientName = document.getElementById('finbot_client').value.trim();
   const year       = document.getElementById('finbot_year').value.trim() || '2025';
   const status     = document.getElementById('finbot-status');
+  _lastFetchYear   = year;
 
   if (!clientName) {
     status.textContent = 'יש להזין שם לקוח';
@@ -561,15 +621,17 @@ async function fetchFromFinbot() {
   }
 
   const matched = finbotClients.find(c =>
-    c.biz_name && (c.biz_name.includes(clientName) || clientName.includes(c.biz_name.substring(0,4)))
+    c.biz_name && (c.biz_name.includes(clientName) || clientName.includes(c.biz_name.substring(0, 4)))
   );
   const dataId = matched ? matched.data_id : '1';
 
-  status.textContent = '⏳ שולף נתונים מ-FinBot... (כ-20 שניות)';
+  status.textContent = '⏳ שולף נתונים מ-FinBot... (כ-30 שניות)';
   status.className = 'status loading';
+  document.getElementById('period-selector').style.display = 'none';
 
   try {
-    const res = await fetch('/fetch_client', {
+    // תמיד קורא fetch_monthly — מחזיר גם נתונים שנתיים וגם חודשיים
+    const res = await fetch('/fetch_monthly', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ data_id: dataId, year })
@@ -577,24 +639,86 @@ async function fetchFromFinbot() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
     set('business_name', data.business_name);
     set('client_name',   data.owner_name);
     set('vat_number',    data.vat_number);
     set('turnover',      data.turnover);
     set('net_income',    data.net_income);
-    set('total_income',  data.turnover);
-    set('from_year',     year);
-    set('to_year',       year);
-    set('from_month',    '01');
-    set('to_month',      '12');
 
-    status.textContent = `✅ נתונים נשלפו! מחזור: ${data.turnover || '—'} ₪  |  רווח: ${data.net_income || '—'} ₪`;
+    if (currentType === 'tamat' && data.periods && data.periods.length > 0) {
+      // תמ"ת: הצג סלקטור תקופות
+      renderMonthlyBars(data.monthly_income || []);
+      displayPeriods(data.periods, year);
+      status.textContent = `✅ נמצאו ${data.periods.length} תקופות רצופות — בחר תקופה לאישור`;
+    } else {
+      // משכנתא / ברירת מחדל: מלא נתונים שנתיים
+      set('total_income', data.turnover);
+      set('from_year',    year);
+      set('to_year',      year);
+      set('from_month',   '01');
+      set('to_month',     '12');
+      status.textContent = `✅ נתונים נשלפו! מחזור: ${data.turnover || '—'} ₪  |  רווח: ${data.net_income || '—'} ₪`;
+    }
     status.className = 'status success';
   } catch(e) {
     status.textContent = `❌ שגיאה: ${e.message}`;
     status.className = 'status error';
   }
+}
+
+function renderMonthlyBars(monthly) {
+  const container = document.getElementById('monthly-bars');
+  container.innerHTML = '';
+  if (!monthly || monthly.length === 0) return;
+
+  const maxVal = Math.max(...monthly.map(Math.abs), 1);
+  const shortNames = ['ינו','פבר','מרץ','אפר','מאי','יוני','יול','אוג','ספט','אוק','נוב','דצמ'];
+
+  monthly.forEach((v, i) => {
+    const pct = Math.round((Math.abs(v) / maxVal) * 48);
+    const col = document.createElement('div');
+    col.className = 'monthly-bar-col';
+    col.innerHTML = `
+      <div class="monthly-bar${v <= 0 ? ' zero' : ''}" style="height:${pct}px" title="${(shortNames[i] || i+1)}: ${v.toLocaleString()} ₪"></div>
+      <span class="monthly-bar-label">${shortNames[i] || i+1}</span>
+    `;
+    container.appendChild(col);
+  });
+}
+
+function displayPeriods(periods, year) {
+  const selector = document.getElementById('period-selector');
+  const list     = document.getElementById('periods-list');
+  list.innerHTML = '';
+
+  periods.slice(0, 12).forEach((p, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'period-btn' + (idx === 0 ? ' selected' : '');
+    btn.innerHTML = `
+      <span class="period-months-badge">${p.months} חו'</span>
+      <strong>${p.start_month_he}–${p.end_month_he}</strong>
+      <span style="color:var(--muted);font-size:11px">סה"כ ${p.total.toLocaleString()} ₪</span>
+    `;
+    btn.onclick = () => selectPeriod(p, year, btn);
+    list.appendChild(btn);
+    if (idx === 0) selectPeriod(p, year, null);
+  });
+
+  selector.style.display = 'block';
+}
+
+function selectPeriod(period, year, clickedBtn) {
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('selected'));
+  if (clickedBtn) clickedBtn.classList.add('selected');
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el !== null) el.value = v; };
+  set('from_month',  String(period.start_month).padStart(2, '0'));
+  set('from_year',   year);
+  set('to_month',    String(period.end_month).padStart(2, '0'));
+  set('to_year',     year);
+  set('total_income', period.total.toLocaleString());
 }
 
 // טען לקוחות ברקע בטעינת הדף

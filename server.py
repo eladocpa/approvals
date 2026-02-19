@@ -192,6 +192,20 @@ def fetch_client():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/fetch_monthly", methods=["POST"])
+def fetch_monthly():
+    """שולף דוח רו"ה חודשי כולל ניתוח תקופות רצופות לתמ"ת."""
+    data = request.json
+    data_id = data.get("data_id", "1")
+    year    = data.get("year", "2025")
+    try:
+        result = _finbot.fetch_monthly_pnl(data_id, year)
+        return jsonify(result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/")
 def index():
     with open(os.path.join(BASE_DIR, "index.html"), encoding="utf-8") as f:

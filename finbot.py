@@ -4,6 +4,11 @@
 import time, json, os, re, tempfile
 from bs4 import BeautifulSoup
 
+MONTH_NAMES_HE = [
+    'ינואר','פברואר','מרץ','אפריל','מאי','יוני',
+    'יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר',
+]
+
 FINBOT_URL = os.environ.get("FINBOT_URL", "https://oha.finbot-edge.co.il")
 USERNAME   = os.environ["FINBOT_USERNAME"]
 PASSWORD   = os.environ["FINBOT_PASSWORD"]
@@ -129,6 +134,135 @@ def parse_report(html):
         data["vat_number"] = m.group(1)
 
     return data
+
+
+def _try_monthly_view(driver):
+    """מנסה להפעיל תצוגת 'לפי חודש' בדוח FinBot."""
+    from selenium.webdriver.common.by import By
+    xpaths = [
+        "//*[contains(text(),'לפי חודש')]",
+        "//*[contains(text(),'חודשי')]",
+        "//input[@value='monthly']",
+        "//button[contains(@class,'month')]",
+    ]
+    for xpath in xpaths:
+        try:
+            for el in driver.find_elements(By.XPATH, xpath):
+                try:
+                    el.click()
+                    time.sleep(1.5)
+                    return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return False
+
+
+def parse_monthly_income(html):
+    """מחלץ מערך הכנסות חודשי (עד 12 ערכים) מה-HTML של הדוח."""
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(separator="\n")
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    keywords = ['סה"כ הכנסות', "סה''כ הכנסות", 'סהכ הכנסות', 'הכנסות סה"כ']
+    for i, line in enumerate(lines):
+        if any(kw in line for kw in keywords):
+            collected = []
+            for j in range(max(0, i - 2), min(len(lines), i + 12)):
+                for n in re.findall(r'-?[\d,]+', lines[j]):
+                    clean = n.replace(',', '')
+                    if clean.lstrip('-').isdigit() and len(clean.lstrip('-')) >= 1:
+                        collected.append(int(clean))
+            if len(collected) >= 12:
+                monthly = collected[:12]
+                # אם הערך ה-13 הוא סכום ה-12, הוא הסה"כ השנתי — מספיק 12
+                if len(collected) >= 13:
+                    diff = abs(collected[12] - sum(monthly))
+                    if diff < max(abs(sum(monthly)) * 0.05, 500):
+                        return monthly
+                return monthly
+            elif 3 <= len(collected) < 12:
+                return collected   # דוח חלקי (שנה לא מלאה)
+    return []
+
+
+def analyze_periods(monthly_income, min_months=3, max_months=6):
+    """מנתח תקופות רצופות עם הכנסות חיוביות ומחזיר רשימה ממוינת."""
+    n = len(monthly_income)
+    periods = []
+    for length in range(min_months, min(max_months + 1, n + 1)):
+        for start in range(n - length + 1):
+            values = monthly_income[start:start + length]
+            if all(v > 0 for v in values):
+                total = sum(values)
+                end_idx = start + length - 1
+                periods.append({
+                    "start_month":    start + 1,
+                    "end_month":      start + length,
+                    "months":         length,
+                    "total":          total,
+                    "avg_monthly":    round(total / length),
+                    "start_month_he": MONTH_NAMES_HE[start]   if start   < 12 else str(start + 1),
+                    "end_month_he":   MONTH_NAMES_HE[end_idx] if end_idx < 12 else str(end_idx + 1),
+                    "monthly_values": values,
+                })
+    # תקופות ארוכות קודם; בין שוות-אורך — הכנסה גבוהה קודם
+    periods.sort(key=lambda x: (x["months"], x["total"]), reverse=True)
+    return periods
+
+
+def fetch_monthly_pnl(data_id, year="2025"):
+    """שולף דוח רו"ה לפי חודשים וכולל ניתוח תקופות רצופות."""
+    client_url_id = url_id(data_id)
+    driver = get_driver()
+    try:
+        login(driver)
+        driver.get(f"{FINBOT_URL}/report/{client_url_id}")
+        time.sleep(4)
+
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+
+        # בחר שנה
+        year_inputs = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+        for yi in year_inputs:
+            val_str = yi.get_attribute("value") or ""
+            if val_str.isdigit() and len(val_str) == 4:
+                if val_str != year:
+                    yi.click(); time.sleep(1)
+                    yi.send_keys(Keys.CONTROL + "a")
+                    yi.send_keys(year); time.sleep(1)
+                    opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+                    for o in opts:
+                        if year in o.text:
+                            o.click(); time.sleep(1); break
+                break
+
+        # נסה להפעיל תצוגה חודשית
+        _try_monthly_view(driver)
+
+        # לחץ "טעינת דו"ח"
+        btns = driver.find_elements(By.CSS_SELECTOR, "button")
+        for btn in btns:
+            if "טעינת" in btn.text:
+                btn.click(); time.sleep(5); break
+
+        html   = driver.page_source
+        result = parse_report(html)
+        result["year"] = year
+
+        monthly = parse_monthly_income(html)
+        result["monthly_income"] = monthly
+        if monthly:
+            periods = analyze_periods(monthly)
+            result["periods"] = periods
+            if periods:
+                result["best_period"] = periods[0]
+
+        return result
+    finally:
+        driver.quit()
 
 
 def fetch_client_data(data_id, year="2025"):
