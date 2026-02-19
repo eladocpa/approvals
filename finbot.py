@@ -16,24 +16,12 @@ def url_id(data_id):
     return int(data_id) + 1
 
 
-def _find_binary(names):
-    """מוצא binary לפי שם — בודק PATH, נתיבים קבועים ו-/nix/store."""
-    import shutil, glob
-    for name in names:
-        p = shutil.which(name)
-        if p:
-            return p
-    for name in names:
-        matches = glob.glob(f"/nix/store/*/bin/{name}")
-        if matches:
-            return matches[0]
-    return None
-
-
 def get_driver():
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
+
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--window-size=1400,900")
@@ -42,18 +30,8 @@ def get_driver():
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
 
-    chromium_path = _find_binary(["chromium", "chromium-browser", "google-chrome"])
-    if chromium_path:
-        opts.binary_location = chromium_path
-
-    chromedriver_path = _find_binary(["chromedriver"])
-    if not chromedriver_path:
-        raise RuntimeError(
-            f"chromedriver לא נמצא (chromium={chromium_path}). "
-            "ודא ש-chromedriver מותקן בסביבת Railway."
-        )
-
-    return webdriver.Chrome(service=Service(chromedriver_path), options=opts)
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=opts)
 
 
 def wait_for(driver, css, timeout=15):
