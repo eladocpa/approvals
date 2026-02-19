@@ -1,10 +1,12 @@
 [phases.setup]
 nixPkgs = [
   "python311",
-  "chromium",
-  "chromedriver",
   "fontconfig",
   "liberation_ttf",
+]
+aptPkgs = [
+  "chromium",
+  "chromium-driver",
 ]
 
 [phases.install]
