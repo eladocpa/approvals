@@ -4,9 +4,9 @@
 import time, json, os, re, tempfile
 from bs4 import BeautifulSoup
 
-FINBOT_URL = "https://oha.finbot-edge.co.il"
-USERNAME   = "Elado.cpa@gmail.com"
-PASSWORD   = "Oo0558837965*"
+FINBOT_URL = os.environ.get("FINBOT_URL", "https://oha.finbot-edge.co.il")
+USERNAME   = os.environ["FINBOT_USERNAME"]
+PASSWORD   = os.environ["FINBOT_PASSWORD"]
 
 # מיפוי data-id -> מספר client ב-URL
 # /report/2 = לקוח data-id=1 (אוחיון רואי חשבון)
