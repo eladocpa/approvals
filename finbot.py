@@ -16,8 +16,21 @@ def url_id(data_id):
     return int(data_id) + 1
 
 
+def _find_binary(names):
+    """מוצא binary לפי שם — בודק PATH, נתיבים קבועים ו-/nix/store."""
+    import shutil, glob
+    for name in names:
+        p = shutil.which(name)
+        if p:
+            return p
+    for name in names:
+        matches = glob.glob(f"/nix/store/*/bin/{name}")
+        if matches:
+            return matches[0]
+    return None
+
+
 def get_driver():
-    import shutil
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.chrome.service import Service
@@ -29,30 +42,18 @@ def get_driver():
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
 
-    # מצא את נתיב Chromium — בדוק נתיבים קבועים ואחר כך PATH
-    for p in ["/usr/bin/chromium", "/usr/bin/chromium-browser",
-              "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable"]:
-        if os.path.exists(p):
-            opts.binary_location = p
-            break
-    else:
-        found = (shutil.which("chromium") or shutil.which("chromium-browser")
-                 or shutil.which("google-chrome"))
-        if found:
-            opts.binary_location = found
+    chromium_path = _find_binary(["chromium", "chromium-browser", "google-chrome"])
+    if chromium_path:
+        opts.binary_location = chromium_path
 
-    # מצא את chromedriver — העדף את המותקן במערכת על פני הורדה אוטומטית
-    chromedriver_path = None
-    for p in ["/usr/bin/chromedriver", "/usr/lib/chromium/chromedriver"]:
-        if os.path.exists(p):
-            chromedriver_path = p
-            break
+    chromedriver_path = _find_binary(["chromedriver"])
     if not chromedriver_path:
-        chromedriver_path = shutil.which("chromedriver")
+        raise RuntimeError(
+            f"chromedriver לא נמצא (chromium={chromium_path}). "
+            "ודא ש-chromedriver מותקן בסביבת Railway."
+        )
 
-    if chromedriver_path:
-        return webdriver.Chrome(service=Service(chromedriver_path), options=opts)
-    return webdriver.Chrome(options=opts)
+    return webdriver.Chrome(service=Service(chromedriver_path), options=opts)
 
 
 def wait_for(driver, css, timeout=15):
