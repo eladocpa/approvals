@@ -13,12 +13,8 @@ FINBOT_URL = os.environ.get("FINBOT_URL", "https://oha.finbot-edge.co.il")
 USERNAME   = os.environ["FINBOT_USERNAME"]
 PASSWORD   = os.environ["FINBOT_PASSWORD"]
 
-# מיפוי data-id -> מספר client ב-URL
-# /report/2 = לקוח data-id=1 (אוחיון רואי חשבון)
-# כלומר: url_id = data_id + 1
-
-def url_id(data_id):
-    return int(data_id) + 1
+# עמוד דוח רווח והפסד (URL קבוע — הלקוח נבחר מהדרופדאון)
+PNL_URL = FINBOT_URL + "/report/2"
 
 
 def get_driver():
@@ -39,7 +35,7 @@ def get_driver():
     return webdriver.Chrome(service=service, options=opts)
 
 
-def wait_for(driver, css, timeout=15):
+def wait_for(driver, css, timeout=20):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
@@ -48,53 +44,191 @@ def wait_for(driver, css, timeout=15):
     )
 
 
+def save_debug_screenshot(driver, step_name):
+    """שומר screenshot לאבחון בעיות — מדפיס נתיב לקובץ."""
+    try:
+        path = os.path.join(tempfile.gettempdir(), f"finbot_{step_name}.png")
+        driver.save_screenshot(path)
+        print(f"[DEBUG screenshot] {path}")
+    except Exception as e:
+        print(f"[DEBUG screenshot failed] {e}")
+
+
 def login(driver):
     from selenium.webdriver.common.by import By
+    print("[FinBot] מתחבר...")
     driver.get(FINBOT_URL)
     wait_for(driver, "input[name='email']")
     driver.find_element(By.CSS_SELECTOR, "input[name='email']").send_keys(USERNAME)
     driver.find_element(By.CSS_SELECTOR, "input[name='password']").send_keys(PASSWORD)
     driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
     time.sleep(5)
-    if "dashboard" not in driver.current_url:
-        raise RuntimeError("כניסה נכשלה")
+    if "dashboard" not in driver.current_url and "report" not in driver.current_url:
+        save_debug_screenshot(driver, "login_failed")
+        raise RuntimeError("כניסה נכשלה — בדוק פרטי התחברות")
+    print("[FinBot] כניסה הצליחה")
 
 
-def get_clients():
-    """מחזיר רשימת לקוחות עם data-id."""
-    driver = get_driver()
+def _open_client_dropdown(driver):
+    """פותח את דרופדאון הלקוחות ומחזיר את שדה הקלט."""
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+
+    client_input = wait_for(driver, "input[placeholder='לקוח / שם חברה / מ.ע ']")
+    client_input.click()
+    time.sleep(1)
+    client_input.send_keys(Keys.CONTROL + "a")
+    client_input.send_keys(Keys.DELETE)
+    time.sleep(2)
+    return client_input
+
+
+def _select_client(driver, data_id):
+    """בוחר לקוח לפי data-option-index מהדרופדאון."""
+    from selenium.webdriver.common.by import By
+
+    print(f"[FinBot] בוחר לקוח data_id={data_id}")
+    _open_client_dropdown(driver)
+
+    options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+    for el in options:
+        if el.get_attribute("data-option-index") == str(data_id):
+            el.click()
+            time.sleep(2)
+            print(f"[FinBot] לקוח נבחר: {el.text.split(chr(10))[0]}")
+            return True
+
+    save_debug_screenshot(driver, "client_not_found")
+    print(f"[WARN] לקוח data_id={data_id} לא נמצא ברשימה")
+    return False
+
+
+def _select_year(driver, year):
+    """בוחר שנה מהקומבובוקס המתאים (מדלג על שדה הלקוח)."""
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+
+    print(f"[FinBot] בוחר שנה {year}")
+    combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+
+    for combo in combos:
+        placeholder = combo.get_attribute("placeholder") or ""
+        # מדלג על שדה הלקוח
+        if "לקוח" in placeholder or "חברה" in placeholder or "מ.ע" in placeholder:
+            continue
+        val = combo.get_attribute("value") or ""
+        if val.isdigit() and len(val) == 4:
+            if val == year:
+                print(f"[FinBot] שנה {year} כבר בחורה")
+                return True
+            combo.click()
+            time.sleep(1)
+            combo.send_keys(Keys.CONTROL + "a")
+            combo.send_keys(year)
+            time.sleep(1.5)
+            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+            for o in opts:
+                if year in o.text:
+                    o.click()
+                    time.sleep(1.5)
+                    print(f"[FinBot] שנה {year} נבחרה")
+                    return True
+
+    print(f"[WARN] לא נמצא קומבובוקס לשנה — ממשיך עם ברירת מחדל")
+    return False
+
+
+def _try_monthly_view(driver):
+    """מפעיל תצוגת 'לפי חודש'. מנסה מספר אסטרטגיות."""
+    from selenium.webdriver.common.by import By
+
+    print("[FinBot] מחפש כפתור 'לפי חודש'...")
+
+    # אסטרטגיה 1: radio button עם value חודש
+    for css in [
+        "input[type='radio'][value='monthly']",
+        "input[type='radio'][value='month']",
+        "input[type='radio'][value='MONTHLY']",
+        "input[type='radio'][value='חודשי']",
+    ]:
+        try:
+            els = driver.find_elements(By.CSS_SELECTOR, css)
+            for el in els:
+                if el.is_selected():
+                    print("[FinBot] 'לפי חודש' כבר בחור (radio)")
+                    return True
+                driver.execute_script("arguments[0].click();", el)
+                time.sleep(1.5)
+                print("[FinBot] 'לפי חודש' נבחר (radio)")
+                return True
+        except Exception:
+            continue
+
+    # אסטרטגיה 2: label / span / כפתור עם טקסט "חודש"
+    xpaths = [
+        "//label[contains(text(),'לפי חודש')]",
+        "//label[contains(.,'לפי חודש')]",
+        "//span[contains(text(),'לפי חודש')]",
+        "//button[contains(text(),'לפי חודש')]",
+        "//button[contains(text(),'חודשי')]",
+        "//*[contains(@class,'month') and contains(text(),'חודש')]",
+        "//input[@type='radio'][following::*[1][contains(text(),'חודש')]]",
+        "//input[@type='radio'][preceding::*[1][contains(text(),'חודש')]]",
+    ]
+    for xpath in xpaths:
+        try:
+            els = driver.find_elements(By.XPATH, xpath)
+            for el in els:
+                try:
+                    driver.execute_script("arguments[0].click();", el)
+                    time.sleep(1.5)
+                    print(f"[FinBot] 'לפי חודש' נבחר (xpath: {xpath})")
+                    return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    # אסטרטגיה 3: select עם option "חודש"
     try:
-        login(driver)
-        driver.get(FINBOT_URL + "/report/2")
-        time.sleep(4)
+        from selenium.webdriver.support.ui import Select
+        for sel_el in driver.find_elements(By.CSS_SELECTOR, "select"):
+            s = Select(sel_el)
+            for option in s.options:
+                if 'חודש' in option.text:
+                    s.select_by_visible_text(option.text)
+                    time.sleep(1.5)
+                    print(f"[FinBot] 'לפי חודש' נבחר (select)")
+                    return True
+    except Exception:
+        pass
 
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.common.keys import Keys
+    save_debug_screenshot(driver, "monthly_view_not_found")
+    print("[WARN] לא נמצא כפתור 'לפי חודש' — הדוח יישלף כפי שהוא")
+    return False
 
-        client_input = wait_for(driver, "input[placeholder='לקוח / שם חברה / מ.ע ']")
-        client_input.click()
-        time.sleep(1)
-        client_input.send_keys(Keys.CONTROL + "a")
-        client_input.send_keys(Keys.DELETE)
-        time.sleep(2)
 
-        clients = []
-        options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-        for el in options:
-            lines = el.text.strip().split("\n")
-            biz_name   = lines[0] if lines else ""
-            owner_name = lines[1] if len(lines) > 1 else ""
-            data_id    = el.get_attribute("data-option-index")
-            clients.append({
-                "biz_name":   biz_name,
-                "owner_name": owner_name,
-                "data_id":    data_id,
-                "url_id":     url_id(data_id) if data_id else None,
-            })
-        return clients
-    finally:
-        driver.quit()
+def _click_load(driver):
+    """לוחץ כפתור 'טעינת דו\"ח' או מקביל."""
+    from selenium.webdriver.common.by import By
 
+    keywords = ["טעינת", "הפק", "הצג", "חפש", "עדכן"]
+    btns = driver.find_elements(By.CSS_SELECTOR, "button")
+    for btn in btns:
+        txt = btn.text.strip()
+        if any(kw in txt for kw in keywords):
+            print(f"[FinBot] לוחץ כפתור: '{txt}'")
+            btn.click()
+            time.sleep(6)
+            return True
+
+    print("[WARN] לא נמצא כפתור טעינה — ממשיך לניתוח")
+    return False
+
+
+# ────────────────────────────────────────────────────────────
+# ניתוח HTML
+# ────────────────────────────────────────────────────────────
 
 def parse_report(html):
     """מחלץ נתונים פיננסיים מדוח רוה"ס."""
@@ -105,22 +239,20 @@ def parse_report(html):
     data = {}
 
     def find_total(keyword):
-        """מוצא את הסכום השנתי (אחרון) אחרי מילת מפתח."""
         for i, line in enumerate(lines):
             if keyword in line:
-                # חפש שורות עם מספרים בהמשך
-                for j in range(i, min(i+20, len(lines))):
+                for j in range(i, min(i + 20, len(lines))):
                     nums = re.findall(r'\u200e?-?[\d,]+', lines[j])
-                    nums = [n.replace(',','').replace('\u200e','') for n in nums if len(n.replace(',','').replace('\u200e','')) >= 3]
-                    if len(nums) >= 2:  # יש מספיק עמודות = יש נתונים חודשיים
-                        return nums[-1]  # האחרון = סה"כ שנתי
+                    nums = [n.replace(',', '').replace('\u200e', '') for n in nums
+                            if len(n.replace(',', '').replace('\u200e', '')) >= 3]
+                    if len(nums) >= 2:
+                        return nums[-1]
         return ""
 
     data["turnover"]     = find_total('סה"כ הכנסות')
     data["net_income"]   = find_total('רווח / הפסד לתקופה')
     data["gross_profit"] = find_total('רווח גולמי')
 
-    # שם עסק ומספר עוסק
     for el in soup.find_all(class_="userDetails"):
         t = el.get_text("\n", strip=True).split("\n")
         if t:
@@ -128,7 +260,6 @@ def parse_report(html):
             if len(t) > 1:
                 data["owner_name"] = t[1]
 
-    # מספר עוסק (9 ספרות)
     m = re.search(r'\b(\d{9})\b', text)
     if m:
         data["vat_number"] = m.group(1)
@@ -136,31 +267,8 @@ def parse_report(html):
     return data
 
 
-def _try_monthly_view(driver):
-    """מנסה להפעיל תצוגת 'לפי חודש' בדוח FinBot."""
-    from selenium.webdriver.common.by import By
-    xpaths = [
-        "//*[contains(text(),'לפי חודש')]",
-        "//*[contains(text(),'חודשי')]",
-        "//input[@value='monthly']",
-        "//button[contains(@class,'month')]",
-    ]
-    for xpath in xpaths:
-        try:
-            for el in driver.find_elements(By.XPATH, xpath):
-                try:
-                    el.click()
-                    time.sleep(1.5)
-                    return True
-                except Exception:
-                    continue
-        except Exception:
-            continue
-    return False
-
-
 def parse_monthly_income(html):
-    """מחלץ מערך הכנסות חודשי (עד 12 ערכים) מה-HTML של הדוח."""
+    """מחלץ מערך הכנסות חודשי מה-HTML."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(separator="\n")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -169,33 +277,32 @@ def parse_monthly_income(html):
     for i, line in enumerate(lines):
         if any(kw in line for kw in keywords):
             collected = []
-            for j in range(max(0, i - 2), min(len(lines), i + 12)):
+            for j in range(max(0, i - 2), min(len(lines), i + 15)):
                 for n in re.findall(r'-?[\d,]+', lines[j]):
                     clean = n.replace(',', '')
                     if clean.lstrip('-').isdigit() and len(clean.lstrip('-')) >= 1:
                         collected.append(int(clean))
             if len(collected) >= 12:
                 monthly = collected[:12]
-                # אם הערך ה-13 הוא סכום ה-12, הוא הסה"כ השנתי — מספיק 12
                 if len(collected) >= 13:
                     diff = abs(collected[12] - sum(monthly))
                     if diff < max(abs(sum(monthly)) * 0.05, 500):
                         return monthly
                 return monthly
             elif 3 <= len(collected) < 12:
-                return collected   # דוח חלקי (שנה לא מלאה)
+                return collected
     return []
 
 
 def analyze_periods(monthly_income, min_months=3, max_months=6):
-    """מנתח תקופות רצופות עם הכנסות חיוביות ומחזיר רשימה ממוינת."""
+    """מנתח תקופות רצופות עם הכנסות חיוביות."""
     n = len(monthly_income)
     periods = []
     for length in range(min_months, min(max_months + 1, n + 1)):
         for start in range(n - length + 1):
             values = monthly_income[start:start + length]
             if all(v > 0 for v in values):
-                total = sum(values)
+                total   = sum(values)
                 end_idx = start + length - 1
                 periods.append({
                     "start_month":    start + 1,
@@ -207,47 +314,72 @@ def analyze_periods(monthly_income, min_months=3, max_months=6):
                     "end_month_he":   MONTH_NAMES_HE[end_idx] if end_idx < 12 else str(end_idx + 1),
                     "monthly_values": values,
                 })
-    # תקופות ארוכות קודם; בין שוות-אורך — הכנסה גבוהה קודם
     periods.sort(key=lambda x: (x["months"], x["total"]), reverse=True)
     return periods
 
 
-def fetch_monthly_pnl(data_id, year="2025"):
-    """שולף דוח רו"ה לפי חודשים וכולל ניתוח תקופות רצופות."""
-    client_url_id = url_id(data_id)
+# ────────────────────────────────────────────────────────────
+# ממשק ציבורי
+# ────────────────────────────────────────────────────────────
+
+def get_clients():
+    """מחזיר רשימת לקוחות עם data-id."""
     driver = get_driver()
     try:
         login(driver)
-        driver.get(f"{FINBOT_URL}/report/{client_url_id}")
+        driver.get(PNL_URL)
         time.sleep(4)
 
+        _open_client_dropdown(driver)
+
         from selenium.webdriver.common.by import By
-        from selenium.webdriver.common.keys import Keys
+        clients = []
+        options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+        for el in options:
+            lines = el.text.strip().split("\n")
+            biz_name   = lines[0] if lines else ""
+            owner_name = lines[1] if len(lines) > 1 else ""
+            data_id    = el.get_attribute("data-option-index")
+            clients.append({
+                "biz_name":   biz_name,
+                "owner_name": owner_name,
+                "data_id":    data_id,
+            })
+        print(f"[FinBot] נמצאו {len(clients)} לקוחות")
+        return clients
+    finally:
+        driver.quit()
 
-        # בחר שנה
-        year_inputs = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
-        for yi in year_inputs:
-            val_str = yi.get_attribute("value") or ""
-            if val_str.isdigit() and len(val_str) == 4:
-                if val_str != year:
-                    yi.click(); time.sleep(1)
-                    yi.send_keys(Keys.CONTROL + "a")
-                    yi.send_keys(year); time.sleep(1)
-                    opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-                    for o in opts:
-                        if year in o.text:
-                            o.click(); time.sleep(1); break
-                break
 
-        # נסה להפעיל תצוגה חודשית
+def fetch_monthly_pnl(data_id, year="2025"):
+    """שולף דוח רו"ה לפי חודשים וניתוח תקופות רצופות לתמ"ת."""
+    driver = get_driver()
+    try:
+        login(driver)
+
+        # 1. עבור לעמוד דוח רווח והפסד
+        print(f"[FinBot] נכנס לדוח רווח והפסד")
+        driver.get(PNL_URL)
+        time.sleep(4)
+        save_debug_screenshot(driver, "01_pnl_loaded")
+
+        # 2. בחר לקוח
+        _select_client(driver, data_id)
+        save_debug_screenshot(driver, "02_client_selected")
+
+        # 3. בחר שנה
+        _select_year(driver, year)
+        save_debug_screenshot(driver, "03_year_selected")
+
+        # 4. בחר תצוגה חודשית
         _try_monthly_view(driver)
+        save_debug_screenshot(driver, "04_monthly_view")
 
-        # לחץ "טעינת דו"ח"
-        btns = driver.find_elements(By.CSS_SELECTOR, "button")
-        for btn in btns:
-            if "טעינת" in btn.text:
-                btn.click(); time.sleep(5); break
+        # 5. לחץ "טעינת דו"ח"
+        _click_load(driver)
+        save_debug_screenshot(driver, "05_report_loaded")
 
+        # 6. נתח
         html   = driver.page_source
         result = parse_report(html)
         result["year"] = year
@@ -259,6 +391,9 @@ def fetch_monthly_pnl(data_id, year="2025"):
             result["periods"] = periods
             if periods:
                 result["best_period"] = periods[0]
+            print(f"[FinBot] נמצאו {len(monthly)} חודשים, {len(periods)} תקופות")
+        else:
+            print("[WARN] לא נמצאו נתונים חודשיים")
 
         return result
     finally:
@@ -266,51 +401,35 @@ def fetch_monthly_pnl(data_id, year="2025"):
 
 
 def fetch_client_data(data_id, year="2025"):
-    """שולף נתונים ללקוח לפי data_id."""
-    client_url_id = url_id(data_id)
+    """שולף נתונים שנתיים ללקוח (למשכנתא)."""
     driver = get_driver()
     try:
         login(driver)
 
-        # עבור לדף הדוח של הלקוח
-        driver.get(f"{FINBOT_URL}/report/{client_url_id}")
+        print(f"[FinBot] נכנס לדוח רווח והפסד (שנתי)")
+        driver.get(PNL_URL)
         time.sleep(4)
+        save_debug_screenshot(driver, "01_pnl_loaded")
 
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.common.keys import Keys
+        _select_client(driver, data_id)
+        save_debug_screenshot(driver, "02_client_selected")
 
-        # בחר שנה
-        year_inputs = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
-        for yi in year_inputs:
-            val = yi.get_attribute("value") or ""
-            if val.isdigit() and len(val) == 4:
-                if val != year:
-                    yi.click(); time.sleep(1)
-                    yi.send_keys(Keys.CONTROL + "a")
-                    yi.send_keys(year); time.sleep(1)
-                    opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-                    for o in opts:
-                        if year in o.text:
-                            o.click(); time.sleep(1); break
-                break
+        _select_year(driver, year)
+        save_debug_screenshot(driver, "03_year_selected")
 
-        # לחץ "טעינת דו"ח"
-        btns = driver.find_elements(By.CSS_SELECTOR, "button")
-        for btn in btns:
-            if "טעינת" in btn.text:
-                btn.click(); time.sleep(5); break
+        _click_load(driver)
+        save_debug_screenshot(driver, "04_report_loaded")
 
         html = driver.page_source
         data = parse_report(html)
         data["year"] = year
         return data
-
     finally:
         driver.quit()
 
 
 if __name__ == "__main__":
     clients = get_clients()
-    print("רשימת לקוחות:")
+    print("\nרשימת לקוחות:")
     for c in clients:
         print(f"  [{c['data_id']}] {c['biz_name']} | {c['owner_name']}")
