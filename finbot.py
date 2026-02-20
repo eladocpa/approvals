@@ -86,7 +86,7 @@ def _open_client_dropdown(driver):
 def _select_client(driver, data_id, biz_name=""):
     """בוחר לקוח לפי data-option-index, ואם לא נמצא — לפי שם עסק."""
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.exceptions import StaleElementReferenceException
+    from selenium.common.exceptions import StaleElementReferenceException
 
     print(f"[FinBot] בוחר לקוח data_id={data_id} biz_name={biz_name!r}")
     _open_client_dropdown(driver)
