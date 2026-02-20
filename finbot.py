@@ -176,12 +176,41 @@ def _select_year(driver, year):
 
 
 def _try_monthly_view(driver):
-    """מפעיל תצוגת 'לפי חודש'. מנסה מספר אסטרטגיות."""
+    """מפעיל תצוגת 'רמת פירוט: חודשי'. מנסה מספר אסטרטגיות."""
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
 
-    print("[FinBot] מחפש כפתור 'לפי חודש'...")
+    print("[FinBot] מחפש הגדרת 'רמת פירוט: חודשי'...")
 
-    # אסטרטגיה 1: radio button עם value חודש
+    # אסטרטגיה 1: קומבובוקס Material-UI — אותו פורמט כמו בחירת לקוח/שנה
+    # מדלג על שדה הלקוח ושדה השנה; בודק את כל שאר הקומבובוקסים
+    combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+    for combo in combos:
+        placeholder = combo.get_attribute("placeholder") or ""
+        if "לקוח" in placeholder or "חברה" in placeholder or "מ.ע" in placeholder:
+            continue
+        val = combo.get_attribute("value") or ""
+        if val.isdigit() and len(val) == 4:
+            continue  # שדה שנה
+        # פתח את הדרופדאון ובדוק אם יש אופציה עם "חודשי"
+        try:
+            driver.execute_script("arguments[0].click();", combo)
+            time.sleep(1)
+            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+            for opt in opts:
+                if 'חודשי' in opt.text or 'חודש' in opt.text:
+                    driver.execute_script("arguments[0].click();", opt)
+                    time.sleep(1.5)
+                    print(f"[FinBot] 'חודשי' נבחר (MUI combobox, val='{val}')")
+                    return True
+            # לא נמצא — סגור את הדרופדאון וסבב הלאה
+            combo.send_keys(Keys.ESCAPE)
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"[FinBot] combobox error: {e}")
+            continue
+
+    # אסטרטגיה 2: radio button עם value חודש
     for css in [
         "input[type='radio'][value='monthly']",
         "input[type='radio'][value='month']",
@@ -192,23 +221,22 @@ def _try_monthly_view(driver):
             els = driver.find_elements(By.CSS_SELECTOR, css)
             for el in els:
                 if el.is_selected():
-                    print("[FinBot] 'לפי חודש' כבר בחור (radio)")
+                    print("[FinBot] 'חודשי' כבר בחור (radio)")
                     return True
                 driver.execute_script("arguments[0].click();", el)
                 time.sleep(1.5)
-                print("[FinBot] 'לפי חודש' נבחר (radio)")
+                print("[FinBot] 'חודשי' נבחר (radio)")
                 return True
         except Exception:
             continue
 
-    # אסטרטגיה 2: label / span / כפתור עם טקסט "חודש"
+    # אסטרטגיה 3: label / span / כפתור עם טקסט "חודש"
     xpaths = [
-        "//label[contains(text(),'לפי חודש')]",
-        "//label[contains(.,'לפי חודש')]",
-        "//span[contains(text(),'לפי חודש')]",
-        "//button[contains(text(),'לפי חודש')]",
+        "//label[contains(text(),'חודשי')]",
+        "//label[contains(.,'חודשי')]",
+        "//span[contains(text(),'חודשי')]",
         "//button[contains(text(),'חודשי')]",
-        "//*[contains(@class,'month') and contains(text(),'חודש')]",
+        "//button[contains(text(),'לפי חודש')]",
         "//input[@type='radio'][following::*[1][contains(text(),'חודש')]]",
         "//input[@type='radio'][preceding::*[1][contains(text(),'חודש')]]",
     ]
@@ -219,14 +247,14 @@ def _try_monthly_view(driver):
                 try:
                     driver.execute_script("arguments[0].click();", el)
                     time.sleep(1.5)
-                    print(f"[FinBot] 'לפי חודש' נבחר (xpath: {xpath})")
+                    print(f"[FinBot] 'חודשי' נבחר (xpath)")
                     return True
                 except Exception:
                     continue
         except Exception:
             continue
 
-    # אסטרטגיה 3: select עם option "חודש"
+    # אסטרטגיה 4: select עם option "חודש"
     try:
         from selenium.webdriver.support.ui import Select
         for sel_el in driver.find_elements(By.CSS_SELECTOR, "select"):
@@ -235,13 +263,13 @@ def _try_monthly_view(driver):
                 if 'חודש' in option.text:
                     s.select_by_visible_text(option.text)
                     time.sleep(1.5)
-                    print(f"[FinBot] 'לפי חודש' נבחר (select)")
+                    print(f"[FinBot] 'חודשי' נבחר (select)")
                     return True
     except Exception:
         pass
 
     save_debug_screenshot(driver, "monthly_view_not_found")
-    print("[WARN] לא נמצא כפתור 'לפי חודש' — הדוח יישלף כפי שהוא")
+    print("[WARN] לא נמצאה הגדרת 'חודשי' — הדוח יישלף כפי שהוא")
     return False
 
 
