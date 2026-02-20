@@ -310,7 +310,7 @@ def parse_monthly_income(html):
     text = soup.get_text(separator="\n")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    keywords = ['רווח / הפסד לתקופה', 'רווח/הפסד לתקופה', 'רווח נקי', 'רווח והפסד לתקופה']
+    keywords = ['רווח / הפסד תפעולי', 'רווח/הפסד תפעולי', 'רווח / הפסד לתקופה', 'רווח/הפסד לתקופה', 'רווח נקי', 'רווח והפסד לתקופה']
     for i, line in enumerate(lines):
         if any(kw in line for kw in keywords):
             collected = []
