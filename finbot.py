@@ -305,12 +305,12 @@ def parse_report(html):
 
 
 def parse_monthly_income(html):
-    """מחלץ מערך הכנסות חודשי מה-HTML."""
+    """מחלץ מערך רווח נקי חודשי מה-HTML."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(separator="\n")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    keywords = ['סה"כ הכנסות', "סה''כ הכנסות", 'סהכ הכנסות', 'הכנסות סה"כ']
+    keywords = ['רווח / הפסד לתקופה', 'רווח/הפסד לתקופה', 'רווח נקי', 'רווח והפסד לתקופה']
     for i, line in enumerate(lines):
         if any(kw in line for kw in keywords):
             collected = []
