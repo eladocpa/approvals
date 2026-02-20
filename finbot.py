@@ -305,20 +305,55 @@ def parse_report(html):
 
 
 def parse_monthly_income(html):
-    """מחלץ מערך רווח נקי חודשי מה-HTML."""
+    """מחלץ מערך רווח/הפסד תפעולי חודשי מה-HTML."""
     soup = BeautifulSoup(html, "html.parser")
+
+    keywords = [
+        'רווח / הפסד תפעולי', 'רווח/הפסד תפעולי',
+        'רווח / הפסד לתקופה', 'רווח/הפסד לתקופה',
+        'רווח נקי', 'רווח והפסד לתקופה',
+    ]
+
+    def parse_cell(text):
+        """ממיר טקסט תא למספר שלם. תומך ב-(1,234) כמספר שלילי."""
+        t = text.strip().replace(',', '').replace('\u200e', '').replace('\xa0', '').replace('\u200f', '')
+        if t.startswith('(') and t.endswith(')'):
+            t = '-' + t[1:-1]
+        if t.lstrip('-').isdigit() and len(t.lstrip('-')) >= 1:
+            return int(t)
+        return None
+
+    # אסטרטגיה 1: חיפוש בשורת טבלה — הדרך הנכונה לדוח חודשי
+    for row in soup.find_all('tr'):
+        row_text = ' '.join(row.stripped_strings)
+        if any(kw in row_text for kw in keywords):
+            cells = row.find_all(['td', 'th'])
+            values = []
+            for cell in cells:
+                cell_text = ' '.join(cell.stripped_strings)
+                n = parse_cell(cell_text)
+                if n is not None:
+                    values.append(n)
+            print(f"[FinBot] שורת רווח נמצאה — {len(values)} ערכים: {values[:13]}")
+            if len(values) >= 12:
+                return values[:12]
+            elif 3 <= len(values) < 12:
+                return values
+
+    # אסטרטגיה 2: fallback טקסטואלי
+    print("[FinBot] לא נמצאה שורת טבלה — מנסה fallback טקסטואלי")
     text = soup.get_text(separator="\n")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    keywords = ['רווח / הפסד תפעולי', 'רווח/הפסד תפעולי', 'רווח / הפסד לתקופה', 'רווח/הפסד לתקופה', 'רווח נקי', 'רווח והפסד לתקופה']
     for i, line in enumerate(lines):
         if any(kw in line for kw in keywords):
             collected = []
-            for j in range(max(0, i - 2), min(len(lines), i + 15)):
-                for n in re.findall(r'-?[\d,]+', lines[j]):
-                    clean = n.replace(',', '')
-                    if clean.lstrip('-').isdigit() and len(clean.lstrip('-')) >= 1:
-                        collected.append(int(clean))
+            for j in range(max(0, i - 2), min(len(lines), i + 20)):
+                for n in re.findall(r'\([\d,]+\)|-?[\d,]+', lines[j]):
+                    val = parse_cell(n)
+                    if val is not None:
+                        collected.append(val)
+            print(f"[FinBot] fallback — {len(collected)} ערכים: {collected[:13]}")
             if len(collected) >= 12:
                 monthly = collected[:12]
                 if len(collected) >= 13:
@@ -328,6 +363,8 @@ def parse_monthly_income(html):
                 return monthly
             elif 3 <= len(collected) < 12:
                 return collected
+
+    print("[WARN] לא נמצאו נתוני רווח/הפסד חודשיים")
     return []
 
 
