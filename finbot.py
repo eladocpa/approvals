@@ -86,29 +86,54 @@ def _open_client_dropdown(driver):
 def _select_client(driver, data_id, biz_name=""):
     """בוחר לקוח לפי data-option-index, ואם לא נמצא — לפי שם עסק."""
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.exceptions import StaleElementReferenceException
 
     print(f"[FinBot] בוחר לקוח data_id={data_id} biz_name={biz_name!r}")
     _open_client_dropdown(driver)
+    time.sleep(1)
 
-    options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+    # ניסיון 1: שאילתה ישירה לפי data-option-index — מונעת stale reference לחלוטין
+    try:
+        el = driver.find_element(
+            By.CSS_SELECTOR, f"li[role='option'][data-option-index='{data_id}']"
+        )
+        driver.execute_script("arguments[0].click();", el)
+        time.sleep(2)
+        print(f"[FinBot] לקוח נבחר (index direct)")
+        return True
+    except Exception:
+        pass
 
-    # ניסיון 1: לפי data-option-index
-    for el in options:
-        if el.get_attribute("data-option-index") == str(data_id):
-            el.click()
-            time.sleep(2)
-            print(f"[FinBot] לקוח נבחר (index): {el.text.split(chr(10))[0]}")
-            return True
-
-    # ניסיון 2: לפי שם עסק (fallback)
+    # ניסיון 2: fallback לפי שם עסק עם retry לטיפול ב-stale elements
     if biz_name:
-        for el in options:
-            el_text = el.text.split("\n")[0].strip()
-            if biz_name.strip() in el_text or el_text in biz_name.strip():
-                el.click()
-                time.sleep(2)
-                print(f"[FinBot] לקוח נבחר (שם): {el_text}")
-                return True
+        for attempt in range(3):
+            try:
+                options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+                target_idx = None
+                for i, el in enumerate(options):
+                    try:
+                        el_text = el.text.split("\n")[0].strip()
+                        if biz_name.strip() in el_text or el_text in biz_name.strip():
+                            target_idx = i
+                            break
+                    except StaleElementReferenceException:
+                        target_idx = None
+                        break
+                if target_idx is not None:
+                    # שאילתה מחדש ממש לפני הקליק למניעת stale reference
+                    fresh = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+                    if target_idx < len(fresh):
+                        driver.execute_script("arguments[0].click();", fresh[target_idx])
+                        time.sleep(2)
+                        print(f"[FinBot] לקוח נבחר (שם): {biz_name}")
+                        return True
+                break  # לא נמצא התאמה — אין טעם לנסות שוב
+            except StaleElementReferenceException:
+                print(f"[FinBot] stale element, retry {attempt + 1}/3")
+                time.sleep(1)
+                if attempt < 2:
+                    _open_client_dropdown(driver)
+                    time.sleep(1)
 
     save_debug_screenshot(driver, "client_not_found")
     print(f"[WARN] לקוח data_id={data_id} / biz_name={biz_name!r} לא נמצא ברשימה")
