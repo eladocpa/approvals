@@ -155,7 +155,7 @@
     color: var(--navy);
     letter-spacing: .3px;
   }
-  .field input {
+  .field input, .field select {
     height: 40px;
     border: 1.5px solid var(--border);
     border-radius: 7px;
@@ -168,12 +168,22 @@
     transition: border-color .15s, box-shadow .15s;
     outline: none;
   }
-  .field input:focus {
+  .field select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: left 12px center;
+    padding-left: 32px;
+    cursor: pointer;
+  }
+  .field select:disabled { opacity: .6; cursor: not-allowed; }
+  .field input:focus, .field select:focus {
     border-color: var(--navy-light);
     box-shadow: 0 0 0 3px rgba(26,60,110,.10);
   }
   .field input::placeholder { color: #b0b7c3; }
-  .field input.required-empty {
+  .field input.required-empty, .field select.required-empty {
     border-color: var(--error);
     box-shadow: 0 0 0 3px rgba(220,38,38,.10);
   }
@@ -343,7 +353,9 @@
       <div class="grid grid-2">
         <div class="field">
           <label>שם לקוח</label>
-          <input id="finbot_client" type="text" placeholder="הקלד שם לקוח לחיפוש...">
+          <select id="finbot_client" disabled>
+            <option value="">טוען רשימת לקוחות...</option>
+          </select>
         </div>
         <div class="field">
           <label>שנת דוח</label>
@@ -609,21 +621,17 @@ let finbotClients = [];
 let _lastFetchYear = '2025';
 
 async function fetchFromFinbot() {
-  const clientName = document.getElementById('finbot_client').value.trim();
-  const year       = document.getElementById('finbot_year').value.trim() || '2025';
-  const status     = document.getElementById('finbot-status');
-  _lastFetchYear   = year;
+  const selectEl  = document.getElementById('finbot_client');
+  const dataId    = selectEl.value;
+  const year      = document.getElementById('finbot_year').value.trim() || '2025';
+  const status    = document.getElementById('finbot-status');
+  _lastFetchYear  = year;
 
-  if (!clientName) {
-    status.textContent = 'יש להזין שם לקוח';
+  if (!dataId) {
+    status.textContent = 'יש לבחור לקוח מהרשימה';
     status.className = 'status error';
     return;
   }
-
-  const matched = finbotClients.find(c =>
-    c.biz_name && (c.biz_name.includes(clientName) || clientName.includes(c.biz_name.substring(0, 4)))
-  );
-  const dataId = matched ? matched.data_id : '1';
 
   status.textContent = '⏳ שולף נתונים מ-FinBot... (כ-30 שניות)';
   status.className = 'status loading';
@@ -723,19 +731,21 @@ function selectPeriod(period, year, clickedBtn) {
 
 // טען לקוחות ברקע בטעינת הדף
 window.addEventListener('load', () => {
+  const select = document.getElementById('finbot_client');
   fetch('/clients').then(r => r.json()).then(data => {
     finbotClients = data.clients || [];
-    const dl = document.createElement('datalist');
-    dl.id = 'finbot-clients-list';
-    document.body.appendChild(dl);
+    select.innerHTML = '<option value="">— בחר לקוח —</option>';
     finbotClients.forEach(c => {
       const opt = document.createElement('option');
-      opt.value = c.biz_name || '';
-      dl.appendChild(opt);
+      opt.value = c.data_id || '';
+      opt.textContent = c.biz_name || '(ללא שם)';
+      select.appendChild(opt);
     });
-    const inp = document.getElementById('finbot_client');
-    if (inp) inp.setAttribute('list', 'finbot-clients-list');
-  }).catch(() => {});
+    select.disabled = false;
+  }).catch(() => {
+    select.innerHTML = '<option value="">שגיאה בטעינת לקוחות</option>';
+    select.disabled = false;
+  });
 });
 
 // ── Certificate generation ──────────────────────────────────────
