@@ -205,103 +205,52 @@ def _select_combobox_option(driver, combo, target_text):
 def _try_monthly_view(driver):
     """מגדיר 'רמת פרוט: חודשי' בהגדרות הדוח.
 
-    FinBot משתמש ב-MUI Select (div[role='button'][aria-haspopup='listbox'])
-    ולא ב-MUI Autocomplete (input[role='combobox']) עבור שדה זה.
+    כל שדות FinBot הם input[role='combobox'] (MUI Autocomplete).
+    שני שדות מחזירים value='שנתי': 'תקופה' ו-'רמת פרוט'.
+    ההבדל: 'רמת פרוט' מציג 2-3 אופציות; 'תקופה' מציג 4+.
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
 
     print("[FinBot] מגדיר רמת פרוט: חודשי...")
 
-    # אבחון: רשום את כל רכיבי הבחירה בדף
-    try:
-        inputs  = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
-        selects = driver.find_elements(By.CSS_SELECTOR, "[aria-haspopup='listbox']")
-        print(f"[DEBUG] input[role=combobox]: {len(inputs)}  |  aria-haspopup=listbox: {len(selects)}")
-        for idx, s in enumerate(selects):
-            print(f"[DEBUG]  select[{idx}] tag={s.tag_name!r}  role={s.get_attribute('role')!r}"
-                  f"  text={s.text[:30]!r}  aria-label={s.get_attribute('aria-label')!r}")
-    except Exception as _e:
-        print(f"[DEBUG] {_e}")
+    combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+    print(f"[DEBUG] סה\"כ קומבובוקסים: {len(combos)}")
 
-    # ── אסטרטגיה 1: MUI Select לפי כותרת 'רמת פרוט' / 'רמת פירוט' ──────────
-    # מאתר כל סוג רכיב (input או div) הסמוך לכותרת, מונע פגיעה בשדה 'תקופה'
-    label_variants = ["רמת פרוט", "רמת פירוט", "רמת פרוט:", "רמת פירוט:"]
-    selectors = ["input[@role='combobox']", "*[@aria-haspopup='listbox']", "*[@role='button']"]
-    directions = ["following", "preceding"]
-    for label in label_variants:
-        for sel in selectors:
-            for direction in directions:
-                xpath = f"//*[contains(text(),{label!r})]/descendant-or-self::*/{direction}::{sel}[1]"
-                try:
-                    el = driver.find_element(By.XPATH, xpath)
-                    if _select_combobox_option(driver, el, 'חודשי'):
-                        print(f"[FinBot] 'חודשי' נבחר (label XPath: {label!r}, {sel})")
-                        return True
-                except Exception:
-                    pass
-        # גם חיפוש ב-parent container
-        for sel in selectors:
-            for depth in range(1, 5):
-                parent = "/".join([".."] * depth)
-                xpath = f"//*[contains(text(),{label!r})]/{ parent }//{sel}"
-                try:
-                    el = driver.find_element(By.XPATH, xpath)
-                    if _select_combobox_option(driver, el, 'חודשי'):
-                        print(f"[FinBot] 'חודשי' נבחר (parent/{depth} XPath: {label!r})")
-                        return True
-                except Exception:
-                    pass
+    for combo in combos:
+        placeholder = combo.get_attribute("placeholder") or ""
+        if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע", "דו")):
+            continue  # לקוח / בחר דו"ח — לא רלוונטי
+        val = combo.get_attribute("value") or ""
+        if val.isdigit() and len(val) == 4:
+            continue  # שדה שנה
 
-    # ── אסטרטגיה 2: כל aria-haspopup='listbox' — בודק אופציות, מונע שינוי 'תקופה' ──
-    # אם נמצאות בדיוק 2 אופציות אחת מהן "חודשי", סביר שזה 'רמת פרוט'
-    selects = driver.find_elements(By.CSS_SELECTOR, "[aria-haspopup='listbox']")
-    for sel in selects:
-        cur_text = sel.text.strip()
-        if cur_text == 'שנתי':
-            # could be תקופה OR רמת פרוט — peek at options
+        if val == 'שנתי':
+            # יכול להיות 'תקופה' או 'רמת פרוט' — פותח ובודק כמות אופציות
             try:
-                driver.execute_script("arguments[0].click();", sel)
-                time.sleep(1)
+                driver.execute_script("arguments[0].click();", combo)
+                time.sleep(0.8)
                 opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-                opt_texts = [o.text.strip() for o in opts]
-                print(f"[DEBUG] select text='שנתי' → אופציות: {opt_texts}")
-                # 'רמת פרוט' בד"כ יש לו 2-3 אופציות; 'תקופה' יש לו 4+
-                has_monthly = any('חודשי' in t for t in opt_texts)
-                few_options  = len(opt_texts) <= 3
-                if has_monthly and few_options:
+                opt_texts = [o.text.strip() for o in opts if o.text.strip()]
+                print(f"[DEBUG] שנתי-input → אופציות ({len(opt_texts)}): {opt_texts}")
+                if len(opt_texts) <= 3 and any('חודשי' in t for t in opt_texts):
+                    # ≤3 אופציות + כולל 'חודשי' → זה 'רמת פרוט'
                     for opt in opts:
                         if 'חודשי' in opt.text:
                             driver.execute_script("arguments[0].click();", opt)
                             time.sleep(1.5)
-                            print("[FinBot] 'חודשי' נבחר (aria-haspopup, few-options heuristic)")
+                            print("[FinBot] 'חודשי' נבחר (רמת פרוט)")
                             return True
-                # Close without selecting
-                try:
-                    sel.send_keys(Keys.ESCAPE)
-                except Exception:
-                    driver.find_element(By.CSS_SELECTOR, "body").send_keys(Keys.ESCAPE)
+                # זה 'תקופה' — סגור בלי לשנות
+                combo.send_keys(Keys.ESCAPE)
                 time.sleep(0.3)
-            except Exception:
-                pass
-        elif cur_text not in ('', 'שנה', '2024', '2023', '2025'):
-            if _select_combobox_option(driver, sel, 'חודשי'):
-                print(f"[FinBot] 'חודשי' נבחר (aria-haspopup, text={cur_text!r})")
-                return True
+            except Exception as _e:
+                print(f"[DEBUG] שנתי-input error: {_e}")
+            continue
 
-    # ── אסטרטגיה 3: input[role='combobox'] שאינו לקוח/שנה ─────────────────
-    combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
-    for combo in combos:
-        placeholder = combo.get_attribute("placeholder") or ""
-        if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע")):
-            continue
-        val = combo.get_attribute("value") or ""
-        if val.isdigit() and len(val) == 4:
-            continue
-        if val == 'שנתי':
-            continue
+        # שדה אחר (לא שנתי, לא שנה, לא לקוח) — נסה לבחור 'חודשי'
         if _select_combobox_option(driver, combo, 'חודשי'):
-            print(f"[FinBot] 'חודשי' נבחר (input combobox, val={val!r})")
+            print(f"[FinBot] 'חודשי' נבחר (combobox val={val!r})")
             return True
 
     save_debug_screenshot(driver, "monthly_view_not_found")
