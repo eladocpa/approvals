@@ -353,7 +353,7 @@
       <div class="grid grid-2">
         <div class="field">
           <label>שם לקוח</label>
-          <select id="finbot_client" disabled>
+          <select id="finbot_client" disabled onchange="fetchFromFinbot()">
             <option value="">טוען רשימת לקוחות...</option>
           </select>
         </div>
@@ -627,13 +627,16 @@ async function fetchFromFinbot() {
   const status    = document.getElementById('finbot-status');
   _lastFetchYear  = year;
 
+  const selectedOpt = selectEl.options[selectEl.selectedIndex];
+  const bizName = selectedOpt ? (selectedOpt.dataset.bizName || '') : '';
+
   if (!dataId) {
     status.textContent = 'יש לבחור לקוח מהרשימה';
     status.className = 'status error';
     return;
   }
 
-  status.textContent = '⏳ שולף נתונים מ-FinBot... (כ-30 שניות)';
+  status.textContent = `⏳ שולף נתונים עבור "${bizName || dataId}"... (כ-30 שניות)`;
   status.className = 'status loading';
   document.getElementById('period-selector').style.display = 'none';
 
@@ -642,7 +645,7 @@ async function fetchFromFinbot() {
     const res = await fetch('/fetch_monthly', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ data_id: dataId, year })
+      body: JSON.stringify({ data_id: dataId, biz_name: bizName, year })
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -735,9 +738,10 @@ window.addEventListener('load', () => {
   fetch('/clients').then(r => r.json()).then(data => {
     finbotClients = data.clients || [];
     select.innerHTML = '<option value="">— בחר לקוח —</option>';
-    finbotClients.forEach(c => {
+    finbotClients.forEach((c, i) => {
       const opt = document.createElement('option');
-      opt.value = c.data_id || '';
+      opt.value = c.data_id != null ? String(c.data_id) : String(i);
+      opt.dataset.bizName = c.biz_name || '';
       opt.textContent = c.biz_name || '(ללא שם)';
       select.appendChild(opt);
     });

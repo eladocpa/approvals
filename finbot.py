@@ -83,23 +83,35 @@ def _open_client_dropdown(driver):
     return client_input
 
 
-def _select_client(driver, data_id):
-    """בוחר לקוח לפי data-option-index מהדרופדאון."""
+def _select_client(driver, data_id, biz_name=""):
+    """בוחר לקוח לפי data-option-index, ואם לא נמצא — לפי שם עסק."""
     from selenium.webdriver.common.by import By
 
-    print(f"[FinBot] בוחר לקוח data_id={data_id}")
+    print(f"[FinBot] בוחר לקוח data_id={data_id} biz_name={biz_name!r}")
     _open_client_dropdown(driver)
 
     options = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+
+    # ניסיון 1: לפי data-option-index
     for el in options:
         if el.get_attribute("data-option-index") == str(data_id):
             el.click()
             time.sleep(2)
-            print(f"[FinBot] לקוח נבחר: {el.text.split(chr(10))[0]}")
+            print(f"[FinBot] לקוח נבחר (index): {el.text.split(chr(10))[0]}")
             return True
 
+    # ניסיון 2: לפי שם עסק (fallback)
+    if biz_name:
+        for el in options:
+            el_text = el.text.split("\n")[0].strip()
+            if biz_name.strip() in el_text or el_text in biz_name.strip():
+                el.click()
+                time.sleep(2)
+                print(f"[FinBot] לקוח נבחר (שם): {el_text}")
+                return True
+
     save_debug_screenshot(driver, "client_not_found")
-    print(f"[WARN] לקוח data_id={data_id} לא נמצא ברשימה")
+    print(f"[WARN] לקוח data_id={data_id} / biz_name={biz_name!r} לא נמצא ברשימה")
     return False
 
 
@@ -351,7 +363,7 @@ def get_clients():
         driver.quit()
 
 
-def fetch_monthly_pnl(data_id, year="2025"):
+def fetch_monthly_pnl(data_id, year="2025", biz_name=""):
     """שולף דוח רו"ה לפי חודשים וניתוח תקופות רצופות לתמ"ת."""
     driver = get_driver()
     try:
@@ -364,7 +376,7 @@ def fetch_monthly_pnl(data_id, year="2025"):
         save_debug_screenshot(driver, "01_pnl_loaded")
 
         # 2. בחר לקוח
-        _select_client(driver, data_id)
+        _select_client(driver, data_id, biz_name)
         save_debug_screenshot(driver, "02_client_selected")
 
         # 3. בחר שנה
@@ -400,7 +412,7 @@ def fetch_monthly_pnl(data_id, year="2025"):
         driver.quit()
 
 
-def fetch_client_data(data_id, year="2025"):
+def fetch_client_data(data_id, year="2025", biz_name=""):
     """שולף נתונים שנתיים ללקוח (למשכנתא)."""
     driver = get_driver()
     try:
@@ -411,7 +423,7 @@ def fetch_client_data(data_id, year="2025"):
         time.sleep(4)
         save_debug_screenshot(driver, "01_pnl_loaded")
 
-        _select_client(driver, data_id)
+        _select_client(driver, data_id, biz_name)
         save_debug_screenshot(driver, "02_client_selected")
 
         _select_year(driver, year)

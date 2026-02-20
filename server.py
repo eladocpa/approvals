@@ -182,10 +182,11 @@ def get_clients():
 @app.route("/fetch_client", methods=["POST"])
 def fetch_client():
     data = request.json
-    data_id = data.get("data_id", "1")
-    year    = data.get("year", "2025")
+    data_id  = data.get("data_id", "1")
+    year     = data.get("year", "2025")
+    biz_name = data.get("biz_name", "")
     try:
-        result = _finbot.fetch_client_data(data_id, year)
+        result = _finbot.fetch_client_data(data_id, year, biz_name)
         return jsonify(result)
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -196,10 +197,11 @@ def fetch_client():
 def fetch_monthly():
     """שולף דוח רו"ה חודשי כולל ניתוח תקופות רצופות לתמ"ת."""
     data = request.json
-    data_id = data.get("data_id", "1")
-    year    = data.get("year", "2025")
+    data_id  = data.get("data_id", "1")
+    year     = data.get("year", "2025")
+    biz_name = data.get("biz_name", "")
     try:
-        result = _finbot.fetch_monthly_pnl(data_id, year)
+        result = _finbot.fetch_monthly_pnl(data_id, year, biz_name)
         return jsonify(result)
     except Exception as e:
         import traceback; traceback.print_exc()
