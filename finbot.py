@@ -289,19 +289,33 @@ def parse_report(html):
     data = {}
 
     def find_total(keyword):
+        """מחפש סכום כולל לאחר מילת מפתח.
+
+        פורמט שנתי:  כותרת בשורה אחת, ערך בודד בשורה הבאה  → מחזיר nums[0]
+        פורמט חודשי: 12 ערכים + סה"כ בשורת הכותרת         → מחזיר nums[-1]
+        """
         for i, line in enumerate(lines):
             if keyword in line:
-                for j in range(i, min(i + 20, len(lines))):
-                    nums = re.findall(r'\u200e?-?[\d,]+', lines[j])
-                    nums = [n.replace(',', '').replace('\u200e', '') for n in nums
-                            if len(n.replace(',', '').replace('\u200e', '')) >= 3]
-                    if len(nums) >= 2:
-                        return nums[-1]
+                for j in range(i, min(i + 15, len(lines))):
+                    candidates = []
+                    for raw in re.findall(r'-?[\d,]+', lines[j]):
+                        c = raw.replace(',', '')
+                        if not c.lstrip('-').isdigit():
+                            continue
+                        if len(c.lstrip('-')) < 3:      # פחות מ-3 ספרות — מסנן
+                            continue
+                        v = int(c)
+                        if 1990 <= abs(v) <= 2100:       # שנה — מסנן
+                            continue
+                        candidates.append(c)
+                    if candidates:
+                        return candidates[-1]
         return ""
 
     data["turnover"]     = find_total('סה"כ הכנסות')
     data["net_income"]   = find_total('רווח / הפסד לתקופה')
     data["gross_profit"] = find_total('רווח גולמי')
+    print(f"[FinBot] parse_report: מחזור={data.get('turnover')!r}  רווח={data.get('net_income')!r}")
 
     for el in soup.find_all(class_="userDetails"):
         t = el.get_text("\n", strip=True).split("\n")
