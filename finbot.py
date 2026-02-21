@@ -205,65 +205,82 @@ def _select_combobox_option(driver, combo, target_text):
 def _try_monthly_view(driver):
     """מגדיר 'רמת פרוט: חודשי' בהגדרות הדוח.
 
-    אסטרטגיה 1: מצא label המכיל 'רמת' + 'פרוט' → combobox הבא → בחר חודשי.
-    אסטרטגיה 2: נסה כל combobox עם value='שנתי' — בחר בו 'חודשי' אם קיים.
+    FinBot עשוי להציג את 'רמת פרוט' כ-combobox, radio, toggle-button, או tab.
+    נסה שלוש אסטרטגיות מהספציפי לכללי.
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
 
     print("[FinBot] מגדיר רמת פרוט: חודשי...")
 
-    def _pick_monthly(combo):
-        """פותח combobox ובוחר 'חודשי' אם קיים. מחזיר True בהצלחה."""
-        driver.execute_script("arguments[0].click();", combo)
-        time.sleep(1.5)   # המתן לרנדור פורטל MUI
-        opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-        if not opts:
-            opts = driver.find_elements(By.XPATH, "//*[@role='option']")
-        opt_texts = [o.text.strip() for o in opts if o.text.strip()]
-        print(f"[DEBUG] combo val={combo.get_attribute('value')!r} → options: {opt_texts}")
-        monthly_opt = next((o for o in opts if 'חודשי' in (o.text or '')), None)
-        if monthly_opt:
-            driver.execute_script("arguments[0].click();", monthly_opt)
-            time.sleep(1.5)
-            print("[FinBot] 'חודשי' נבחר")
-            return True
-        combo.send_keys(Keys.ESCAPE)
-        time.sleep(0.4)
-        return False
-
-    # ── אסטרטגיה 1: label "רמת פרוט" → combobox הבא בDOM ──────────────────
+    # ── אסטרטגיה 1: label "רמת פרוט" → ancestor container → element "חודשי" ──
+    # עובד ל-Radio/Toggle/Tab: מצא את הלייבל ואת הכפתור "חודשי" באותו container.
     try:
         label_el = driver.find_element(
-            By.XPATH,
-            "//*[contains(text(),'רמת') and contains(text(),'פרוט')]"
-        )
-        combo = label_el.find_element(
-            By.XPATH,
-            "following::input[@role='combobox'][1]"
-        )
-        print(f"[DEBUG] label strategy: label found, combo val={combo.get_attribute('value')!r}")
-        if _pick_monthly(combo):
-            return True
+            By.XPATH, "//*[contains(text(),'רמת') and contains(text(),'פרוט')]")
+        for depth in range(2, 9):
+            try:
+                ancestor = label_el.find_element(By.XPATH, f"ancestor::*[{depth}]")
+                monthly_el = ancestor.find_element(
+                    By.XPATH,
+                    ".//*[normalize-space(text())='חודשי' or normalize-space(.)='חודשי']"
+                )
+                tag = monthly_el.tag_name
+                print(f"[DEBUG] label+container (depth={depth}): <{tag}> נמצא")
+                driver.execute_script("arguments[0].click();", monthly_el)
+                time.sleep(1.5)
+                print(f"[FinBot] 'חודשי' נבחר (label strategy, depth={depth})")
+                return True
+            except Exception:
+                continue
     except Exception as e:
         print(f"[DEBUG] label strategy failed: {e}")
 
-    # ── אסטרטגיה 2: כל combobox — נסה את כל מי שיש לו אופציית 'חודשי' ──────
+    # ── אסטרטגיה 2: combobox — פתח כל combobox, בחר 'חודשי' אם קיים ──────────
     combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
     print(f"[DEBUG] סה\"כ קומבובוקסים: {len(combos)}")
-
     for combo in combos:
         placeholder = combo.get_attribute("placeholder") or ""
         if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע")):
-            continue  # שדות לקוח/חברה — לא רלוונטי
+            continue
         val = combo.get_attribute("value") or ""
         if val.isdigit() and len(val) == 4:
-            continue  # שדה שנה
+            continue
         try:
-            if _pick_monthly(combo):
+            driver.execute_script("arguments[0].click();", combo)
+            time.sleep(1.5)
+            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+            if not opts:
+                opts = driver.find_elements(By.XPATH, "//*[@role='option']")
+            opt_texts = [o.text.strip() for o in opts if o.text.strip()]
+            print(f"[DEBUG] combo val={val!r} → options: {opt_texts}")
+            monthly_opt = next((o for o in opts if 'חודשי' in (o.text or '')), None)
+            if monthly_opt:
+                driver.execute_script("arguments[0].click();", monthly_opt)
+                time.sleep(1.5)
+                print("[FinBot] 'חודשי' נבחר (combobox)")
                 return True
+            combo.send_keys(Keys.ESCAPE)
+            time.sleep(0.4)
         except Exception as e:
             print(f"[DEBUG] combo error: {e}")
+
+    # ── אסטרטגיה 3: כל אלמנט בעמוד עם טקסט 'חודשי' (radio / button / tab) ───
+    try:
+        all_monthly = driver.find_elements(
+            By.XPATH, "//*[normalize-space(text())='חודשי']")
+        print(f"[DEBUG] כל אלמנטי 'חודשי' בדף: {len(all_monthly)}")
+        for el in all_monthly:
+            tag  = el.tag_name
+            cls  = el.get_attribute("class") or ""
+            role = el.get_attribute("role") or ""
+            print(f"[DEBUG] 'חודשי' → <{tag}> role={role!r} class={cls[:60]!r}")
+            driver.execute_script("arguments[0].click();", el)
+            time.sleep(1.5)
+            print(f"[FinBot] 'חודשי' נלחץ (<{tag}> role={role!r})")
+            return True
+    except Exception as e:
+        print(f"[DEBUG] element strategy failed: {e}")
 
     save_debug_screenshot(driver, "monthly_view_not_found")
     print("[WARN] לא נמצאה הגדרת 'חודשי'")
