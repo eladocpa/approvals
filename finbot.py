@@ -205,53 +205,65 @@ def _select_combobox_option(driver, combo, target_text):
 def _try_monthly_view(driver):
     """מגדיר 'רמת פרוט: חודשי' בהגדרות הדוח.
 
-    כל שדות FinBot הם input[role='combobox'] (MUI Autocomplete).
-    שני שדות מחזירים value='שנתי': 'תקופה' ו-'רמת פרוט'.
-    ההבדל: 'רמת פרוט' מציג 2-3 אופציות; 'תקופה' מציג 4+.
+    אסטרטגיה 1: מצא label המכיל 'רמת' + 'פרוט' → combobox הבא → בחר חודשי.
+    אסטרטגיה 2: נסה כל combobox עם value='שנתי' — בחר בו 'חודשי' אם קיים.
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
 
     print("[FinBot] מגדיר רמת פרוט: חודשי...")
 
+    def _pick_monthly(combo):
+        """פותח combobox ובוחר 'חודשי' אם קיים. מחזיר True בהצלחה."""
+        driver.execute_script("arguments[0].click();", combo)
+        time.sleep(1.5)   # המתן לרנדור פורטל MUI
+        opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+        if not opts:
+            opts = driver.find_elements(By.XPATH, "//*[@role='option']")
+        opt_texts = [o.text.strip() for o in opts if o.text.strip()]
+        print(f"[DEBUG] combo val={combo.get_attribute('value')!r} → options: {opt_texts}")
+        monthly_opt = next((o for o in opts if 'חודשי' in (o.text or '')), None)
+        if monthly_opt:
+            driver.execute_script("arguments[0].click();", monthly_opt)
+            time.sleep(1.5)
+            print("[FinBot] 'חודשי' נבחר")
+            return True
+        combo.send_keys(Keys.ESCAPE)
+        time.sleep(0.4)
+        return False
+
+    # ── אסטרטגיה 1: label "רמת פרוט" → combobox הבא בDOM ──────────────────
+    try:
+        label_el = driver.find_element(
+            By.XPATH,
+            "//*[contains(text(),'רמת') and contains(text(),'פרוט')]"
+        )
+        combo = label_el.find_element(
+            By.XPATH,
+            "following::input[@role='combobox'][1]"
+        )
+        print(f"[DEBUG] label strategy: label found, combo val={combo.get_attribute('value')!r}")
+        if _pick_monthly(combo):
+            return True
+    except Exception as e:
+        print(f"[DEBUG] label strategy failed: {e}")
+
+    # ── אסטרטגיה 2: כל combobox — נסה את כל מי שיש לו אופציית 'חודשי' ──────
     combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
     print(f"[DEBUG] סה\"כ קומבובוקסים: {len(combos)}")
 
     for combo in combos:
         placeholder = combo.get_attribute("placeholder") or ""
-        if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע", "דו")):
-            continue  # לקוח / בחר דו"ח — לא רלוונטי
+        if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע")):
+            continue  # שדות לקוח/חברה — לא רלוונטי
         val = combo.get_attribute("value") or ""
         if val.isdigit() and len(val) == 4:
             continue  # שדה שנה
-
-        if val == 'שנתי':
-            # יכול להיות 'תקופה' או 'רמת פרוט' — פותח ובודק כמות אופציות
-            try:
-                driver.execute_script("arguments[0].click();", combo)
-                time.sleep(0.8)
-                opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-                opt_texts = [o.text.strip() for o in opts if o.text.strip()]
-                print(f"[DEBUG] שנתי-input → אופציות ({len(opt_texts)}): {opt_texts}")
-                if len(opt_texts) <= 3 and any('חודשי' in t for t in opt_texts):
-                    # ≤3 אופציות + כולל 'חודשי' → זה 'רמת פרוט'
-                    for opt in opts:
-                        if 'חודשי' in opt.text:
-                            driver.execute_script("arguments[0].click();", opt)
-                            time.sleep(1.5)
-                            print("[FinBot] 'חודשי' נבחר (רמת פרוט)")
-                            return True
-                # זה 'תקופה' — סגור בלי לשנות
-                combo.send_keys(Keys.ESCAPE)
-                time.sleep(0.3)
-            except Exception as _e:
-                print(f"[DEBUG] שנתי-input error: {_e}")
-            continue
-
-        # שדה אחר (לא שנתי, לא שנה, לא לקוח) — נסה לבחור 'חודשי'
-        if _select_combobox_option(driver, combo, 'חודשי'):
-            print(f"[FinBot] 'חודשי' נבחר (combobox val={val!r})")
-            return True
+        try:
+            if _pick_monthly(combo):
+                return True
+        except Exception as e:
+            print(f"[DEBUG] combo error: {e}")
 
     save_debug_screenshot(driver, "monthly_view_not_found")
     print("[WARN] לא נמצאה הגדרת 'חודשי'")
@@ -350,22 +362,41 @@ def parse_monthly_income(html):
             return int(t)
         return None
 
-    # אסטרטגיה 1: חיפוש בשורת טבלה — הדרך הנכונה לדוח חודשי
+    def _extract_from_row(row, cell_tags):
+        """מחלץ ערכים מספריים מתאי שורה."""
+        cells = row.find_all(cell_tags) if isinstance(cell_tags, list) \
+                else row.find_all(attrs={"role": cell_tags})
+        values = []
+        for cell in cells:
+            cell_text = ' '.join(cell.stripped_strings)
+            n = parse_cell(cell_text)
+            if n is not None:
+                values.append(n)
+        return values
+
+    # אסטרטגיה 1a: שורות <tr> עם <td>/<th> — HTML טבלה רגילה
     for row in soup.find_all('tr'):
         row_text = ' '.join(row.stripped_strings)
         if any(kw in row_text for kw in keywords):
-            cells = row.find_all(['td', 'th'])
+            values = _extract_from_row(row, ['td', 'th'])
+            print(f"[FinBot] שורת <tr> — {len(values)} ערכים: {values[:13]}")
+            if len(values) >= 12:
+                return values[:12]
+
+    # אסטרטגיה 1b: שורות role="row" עם role="cell"/"gridcell" — div table (React)
+    for row in soup.find_all(attrs={"role": "row"}):
+        row_text = ' '.join(row.stripped_strings)
+        if any(kw in row_text for kw in keywords):
+            cells = row.find_all(attrs={"role": ["cell", "gridcell", "columnheader"]})
             values = []
             for cell in cells:
                 cell_text = ' '.join(cell.stripped_strings)
                 n = parse_cell(cell_text)
                 if n is not None:
                     values.append(n)
-            print(f"[FinBot] שורת רווח נמצאה — {len(values)} ערכים: {values[:13]}")
+            print(f"[FinBot] שורת role=row — {len(values)} ערכים: {values[:13]}")
             if len(values) >= 12:
                 return values[:12]
-            elif 3 <= len(values) < 12:
-                return values
 
     # אסטרטגיה 2: fallback טקסטואלי
     # מחזיר ערכים רק אם נמצאו >= 12 — פחות מ-12 סימן שהדוח אינו במצב חודשי
@@ -376,18 +407,20 @@ def parse_monthly_income(html):
     for i, line in enumerate(lines):
         if any(kw in line for kw in keywords):
             collected = []
-            for j in range(max(0, i - 2), min(len(lines), i + 20)):
+            for j in range(max(0, i - 2), min(len(lines), i + 25)):
                 for n in re.findall(r'\([\d,]+\)|-?[\d,]+', lines[j]):
                     v = parse_cell(n)
-                    if v is not None and abs(v) >= 100:   # מסנן מספרי עמוד/אינדקס
-                        collected.append(v)
+                    if v is None:
+                        continue
+                    av = abs(v)
+                    if av < 100:           # מספר קטן / אינדקס
+                        continue
+                    if 1990 <= av <= 2100: # שנה
+                        continue
+                    collected.append(v)
             print(f"[FinBot] fallback — {len(collected)} ערכים: {collected[:13]}")
             if len(collected) >= 12:
                 monthly = collected[:12]
-                if len(collected) >= 13:
-                    diff = abs(collected[12] - sum(monthly))
-                    if diff < max(abs(sum(monthly)) * 0.05, 500):
-                        return monthly
                 return monthly
             # פחות מ-12: הדוח כנראה אינו במצב חודשי — לא להחזיר נתונים שגויים
             print(f"[WARN] fallback — רק {len(collected)} ערכים, הדוח לא במצב חודשי")
