@@ -382,25 +382,28 @@ def parse_monthly_income(html):
 
 
 def analyze_periods(monthly_income, min_months=3, max_months=6):
-    """מנתח תקופות רצופות עם הכנסות חיוביות."""
+    """מנתח את כל רצפי 3-6 חודשים לאורך כל השנה.
+
+    כולל חודשים עם הכנסה אפסית או שלילית — כל חלון כרונולוגי נכלל.
+    """
     n = len(monthly_income)
     periods = []
     for length in range(min_months, min(max_months + 1, n + 1)):
         for start in range(n - length + 1):
-            values = monthly_income[start:start + length]
-            if all(v > 0 for v in values):
-                total   = sum(values)
-                end_idx = start + length - 1
-                periods.append({
-                    "start_month":    start + 1,
-                    "end_month":      start + length,
-                    "months":         length,
-                    "total":          total,
-                    "avg_monthly":    round(total / length),
-                    "start_month_he": MONTH_NAMES_HE[start]   if start   < 12 else str(start + 1),
-                    "end_month_he":   MONTH_NAMES_HE[end_idx] if end_idx < 12 else str(end_idx + 1),
-                    "monthly_values": values,
-                })
+            values  = monthly_income[start:start + length]
+            total   = sum(values)
+            end_idx = start + length - 1
+            periods.append({
+                "start_month":    start + 1,
+                "end_month":      start + length,
+                "months":         length,
+                "total":          total,
+                "avg_monthly":    round(total / length),
+                "start_month_he": MONTH_NAMES_HE[start]   if start   < 12 else str(start + 1),
+                "end_month_he":   MONTH_NAMES_HE[end_idx] if end_idx < 12 else str(end_idx + 1),
+                "monthly_values": values,
+            })
+    # מיון: חלון ארוך יותר עדיף; בין שווי-אורך — סכום גבוה יותר עדיף
     periods.sort(key=lambda x: (x["months"], x["total"]), reverse=True)
     return periods
 
