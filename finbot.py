@@ -203,16 +203,142 @@ def _select_combobox_option(driver, combo, target_text):
 
 
 def _try_monthly_view(driver):
-    """מגדיר 'רמת פרוט: חודשי'.
+    """מגדיר 'רמת פרוט: חודשי' — תוך הקפדה לא לשנות 'תקופה'.
 
     מסקנות מהלוג:
-    - 2 combobox עם val='שנתי' (תקופה + רמת פרוט)
-    - כשנפתחים דרך JS-click → options: [] (portal לא נמצא)
-    - 'חודשי' אינו קיים בDOM לפני פתיחת הדרופדאון
-
-    גישה: פתח כל combobox val='שנתי' עם regular-click + Down-arrow,
-    חפש options עם selectors מרובים, ואם לא נמצא — הקלד 'חודשי'.
+    - שני combobox עם val='שנתי': "תקופה" (4+ אופציות) ו"רמת פרוט" (2-3 אופציות)
+    - JS-click לא מפעיל MUI portal; regular-click + Down-arrow כן
+    - שינוי "תקופה" ל'חודשי' = רק חודש אחד (שגוי)
+    - שינוי "רמת פרוט" ל'חודשי' = 12 עמודות (נכון)
     """
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.support.ui import Select
+
+    MONTHLY = 'חודשי'
+    print("[FinBot] מגדיר רמת פרוט: חודשי...")
+
+    def _options_in_dom():
+        """מחזיר רשימת טקסטים של אופציות הנוכחיות ב-DOM."""
+        for sel in ["li[role='option']", ".MuiAutocomplete-option",
+                    "[role='listbox'] li", "[role='listbox'] *",
+                    ".MuiMenu-list li"]:
+            try:
+                els = driver.find_elements(By.CSS_SELECTOR, sel)
+                texts = [e.text.strip() for e in els if e.text.strip()]
+                if texts:
+                    return texts, els
+            except Exception:
+                pass
+        # fallback: read listbox innerHTML
+        inner = driver.execute_script("""
+            var lb = document.querySelector("[role='listbox']") ||
+                     document.querySelector(".MuiAutocomplete-listbox") ||
+                     document.querySelector(".MuiMenu-list");
+            return lb ? lb.innerText : '';
+        """)
+        print(f"[DEBUG] listbox innerText: {inner[:200]!r}")
+        return [], []
+
+    # ── אסטרטגיה 1: <select> נייטיב ─────────────────────────────────────────
+    for sel_el in driver.find_elements(By.TAG_NAME, "select"):
+        try:
+            sel = Select(sel_el)
+            texts = [o.text.strip() for o in sel.options]
+            if any(MONTHLY in t for t in texts):
+                sel.select_by_visible_text(MONTHLY)
+                time.sleep(1.5)
+                print("[FinBot] 'חודשי' נבחר (<select>)")
+                return True
+        except Exception:
+            pass
+
+    # ── אסטרטגיה 2: combobox val='שנתי' — regular-click + Down, ספירת אופציות
+    annual_combos = [
+        c for c in driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
+        if (c.get_attribute("value") or "") == 'שנתי'
+    ]
+    print(f"[DEBUG] combobox עם val='שנתי': {len(annual_combos)}")
+
+    for combo in annual_combos:
+        try:
+            # regular click (לא JS) — מפעיל MUI portal
+            combo.click()
+            time.sleep(0.6)
+            combo.send_keys(Keys.DOWN)   # פותח dropdown ומראה את כל האופציות
+            time.sleep(1.4)
+
+            opt_texts, opt_els = _options_in_dom()
+            print(f"[DEBUG] combo opened → options({len(opt_texts)}): {opt_texts}")
+
+            has_monthly = any(MONTHLY in t for t in opt_texts)
+
+            # "רמת פרוט" = ≤ 4 אופציות עם 'חודשי'
+            # "תקופה"    = 5+ אופציות (שנתי/רבעוני/חצי-שנתי/חודשי/...)
+            if has_monthly and len(opt_texts) <= 4:
+                # בחר 'חודשי' ב"רמת פרוט"
+                target = next((e for e in opt_els if MONTHLY in (e.text or '')), None)
+                if target:
+                    driver.execute_script("arguments[0].click();", target)
+                    time.sleep(2.0)
+                    new_val = combo.get_attribute("value") or ""
+                    print(f"[FinBot] 'חודשי' נבחר ב'רמת פרוט' (val כעת: {new_val!r})")
+                    return True
+
+            elif has_monthly and len(opt_texts) > 4:
+                print(f"[DEBUG] {len(opt_texts)} אופציות → זו 'תקופה', סוגר")
+
+            # סגור ללא שינוי
+            combo.send_keys(Keys.ESCAPE)
+            time.sleep(0.5)
+
+        except Exception as e:
+            print(f"[DEBUG] combo error: {e}")
+            try:
+                combo.send_keys(Keys.ESCAPE)
+            except Exception:
+                pass
+            time.sleep(0.3)
+
+    # ── אסטרטגיה 3: הקלד 'חודשי' ישירות ────────────────────────────────────
+    for combo in annual_combos:
+        try:
+            combo.click()
+            time.sleep(0.5)
+            combo.send_keys(Keys.CONTROL + "a")
+            combo.send_keys(MONTHLY)
+            time.sleep(1.4)
+
+            opt_texts, opt_els = _options_in_dom()
+            print(f"[DEBUG] typed → options: {opt_texts}")
+            target = next((e for e in opt_els if MONTHLY in (e.text or '')), None)
+            if target and len(opt_texts) <= 4:
+                driver.execute_script("arguments[0].click();", target)
+                time.sleep(2.0)
+                print("[FinBot] 'חודשי' נבחר (typed)")
+                return True
+            combo.send_keys(Keys.ESCAPE)
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"[DEBUG] type error: {e}")
+
+    # ── דאמפ לדיבוג ──────────────────────────────────────────────────────────
+    dump = driver.execute_script("""
+        return Array.from(document.querySelectorAll(
+            'input,select,button,[role=radio],[role=tab],[role=combobox]'))
+            .map(function(el){
+                return el.tagName+'|val='+(el.value||'').substring(0,20)
+                       +'|txt='+el.textContent.trim().substring(0,20)
+                       +'|role='+(el.getAttribute('role')||'');
+            }).join('\\n');
+    """)
+    print(f"[DEBUG] שדות בדף:\n{dump}")
+
+    save_debug_screenshot(driver, "monthly_view_not_found")
+    print("[WARN] לא נמצאה הגדרת 'חודשי'")
+    return False
+
+
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.support.ui import Select
@@ -609,20 +735,26 @@ def fetch_monthly_pnl(data_id, year="2025", biz_name=""):
         time.sleep(4)
         save_debug_screenshot(driver, "01_pnl_loaded")
 
-        # 2. בחר לקוח
+        # 2. בחר לקוח — האפליקציה עשויה לטעון אוטומטית לאחר הבחירה
         _select_client(driver, data_id, biz_name)
+        time.sleep(3)   # המתן לטעינה אוטומטית אם יש
         save_debug_screenshot(driver, "02_client_selected")
 
         # 3. בחר שנה
         _select_year(driver, year)
+        time.sleep(2)
         save_debug_screenshot(driver, "03_year_selected")
 
-        # 4. בחר תצוגה חודשית
-        _try_monthly_view(driver)
+        # 4. שנה 'רמת פרוט' ל-'חודשי' — חייב להיות אחרי בחירת לקוח+שנה
+        monthly_changed = _try_monthly_view(driver)
         save_debug_screenshot(driver, "04_monthly_view")
 
-        # 5. לחץ "טעינת דו"ח"
-        _click_load(driver)
+        # 5. טעינת הדוח — לחץ כפתור אם קיים, אחרת המתן לטעינה אוטומטית
+        btn_clicked = _click_load(driver)
+        if not btn_clicked:
+            # אין כפתור — האפליקציה טוענת אוטומטית לאחר שינוי ההגדרות
+            print("[FinBot] אין כפתור — ממתין לטעינה אוטומטית")
+            time.sleep(6)
         save_debug_screenshot(driver, "05_report_loaded")
 
         # 6. נתח
