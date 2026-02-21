@@ -205,40 +205,74 @@ def _select_combobox_option(driver, combo, target_text):
 def _try_monthly_view(driver):
     """מגדיר 'רמת פרוט: חודשי' בהגדרות הדוח.
 
-    FinBot עשוי להציג את 'רמת פרוט' כ-combobox, radio, toggle-button, או tab.
-    נסה שלוש אסטרטגיות מהספציפי לכללי.
+    ארבע אסטרטגיות לפי סדר אמינות:
+    1. JavaScript DOM scan — מוצא כל אלמנט אינטראקטיבי עם טקסט 'חודשי'
+    2. <select> נייטיב — Selenium Select API
+    3. combobox MUI — פתיחה + בחירת אופציה
+    4. דאמפ מלא של שדות הטופס לצורכי דיבוג
     """
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
+    from selenium.webdriver.support.ui import Select
 
+    MONTHLY = 'חודשי'
     print("[FinBot] מגדיר רמת פרוט: חודשי...")
 
-    # ── אסטרטגיה 1: label "רמת פרוט" → ancestor container → element "חודשי" ──
-    # עובד ל-Radio/Toggle/Tab: מצא את הלייבל ואת הכפתור "חודשי" באותו container.
-    try:
-        label_el = driver.find_element(
-            By.XPATH, "//*[contains(text(),'רמת') and contains(text(),'פרוט')]")
-        for depth in range(2, 9):
-            try:
-                ancestor = label_el.find_element(By.XPATH, f"ancestor::*[{depth}]")
-                monthly_el = ancestor.find_element(
-                    By.XPATH,
-                    ".//*[normalize-space(text())='חודשי' or normalize-space(.)='חודשי']"
-                )
-                tag = monthly_el.tag_name
-                print(f"[DEBUG] label+container (depth={depth}): <{tag}> נמצא")
-                driver.execute_script("arguments[0].click();", monthly_el)
-                time.sleep(1.5)
-                print(f"[FinBot] 'חודשי' נבחר (label strategy, depth={depth})")
-                return True
-            except Exception:
-                continue
-    except Exception as e:
-        print(f"[DEBUG] label strategy failed: {e}")
+    # ── אסטרטגיה 1: JavaScript — סריקת DOM ישירה ────────────────────────────
+    # מחפש כל אלמנט אינטראקטיבי שהטקסט שלו (כולל צאצאים) הוא 'חודשי'
+    # ומדלג על תאי נתוני הדוח (טבלאות, grids).
+    info = driver.execute_script("""
+        var MONTHLY = arguments[0];
+        var TAGS = ['button','label','input','li','span','div','a','td','th'];
+        var found = [];
+        TAGS.forEach(function(tag) {
+            Array.from(document.getElementsByTagName(tag)).forEach(function(el) {
+                var own  = (el.childElementCount === 0 ? el.textContent : el.firstChild && el.firstChild.nodeType === 3 ? el.firstChild.textContent : '').trim();
+                var full = el.textContent.trim();
+                var val  = (el.value || '').trim();
+                var aria = (el.getAttribute('aria-label') || '').trim();
+                if (own === MONTHLY || val === MONTHLY || aria === MONTHLY ||
+                        (full === MONTHLY)) {
+                    // דלג על תאים בטבלאות (נתוני הדוח עצמו)
+                    var inReport = el.closest('table') || el.closest('[role="grid"]') ||
+                                   el.closest('[class*="report"]') || el.closest('[class*="MuiTable"]');
+                    if (!inReport) found.push(el);
+                }
+            });
+        });
+        // הדפס לקונסולה לצורכי דיבוג
+        console.log('[FinBot] חודשי elements:', found.length, found.map(function(e){
+            return e.tagName+'|'+e.type+'|'+e.className.substring(0,30);
+        }));
+        if (found.length === 0) return null;
+        var el = found[0];
+        el.click();
+        return el.tagName + '|type=' + (el.type||'') + '|class=' + el.className.substring(0,50);
+    """, MONTHLY)
 
-    # ── אסטרטגיה 2: combobox — פתח כל combobox, בחר 'חודשי' אם קיים ──────────
+    if info:
+        time.sleep(1.5)
+        print(f"[FinBot] 'חודשי' נלחץ (JS): {info}")
+        return True
+    print("[DEBUG] JS: אין אלמנט 'חודשי' בטופס")
+
+    # ── אסטרטגיה 2: <select> נייטיב ─────────────────────────────────────────
+    for sel_el in driver.find_elements(By.TAG_NAME, "select"):
+        try:
+            sel = Select(sel_el)
+            opts_text = [o.text.strip() for o in sel.options]
+            print(f"[DEBUG] <select> options: {opts_text}")
+            if any(MONTHLY in t for t in opts_text):
+                sel.select_by_visible_text(MONTHLY)
+                time.sleep(1.5)
+                print("[FinBot] 'חודשי' נבחר (<select>)")
+                return True
+        except Exception as e:
+            print(f"[DEBUG] <select> error: {e}")
+
+    # ── אסטרטגיה 3: combobox MUI — פתח, הדפס אופציות, בחר ───────────────────
     combos = driver.find_elements(By.CSS_SELECTOR, "input[role='combobox']")
-    print(f"[DEBUG] סה\"כ קומבובוקסים: {len(combos)}")
+    print(f"[DEBUG] קומבובוקסים: {len(combos)}")
     for combo in combos:
         placeholder = combo.get_attribute("placeholder") or ""
         if any(k in placeholder for k in ("לקוח", "חברה", "מ.ע")):
@@ -249,14 +283,13 @@ def _try_monthly_view(driver):
         try:
             driver.execute_script("arguments[0].click();", combo)
             time.sleep(1.5)
-            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-            if not opts:
-                opts = driver.find_elements(By.XPATH, "//*[@role='option']")
+            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']") \
+                   or driver.find_elements(By.XPATH, "//*[@role='option']")
             opt_texts = [o.text.strip() for o in opts if o.text.strip()]
-            print(f"[DEBUG] combo val={val!r} → options: {opt_texts}")
-            monthly_opt = next((o for o in opts if 'חודשי' in (o.text or '')), None)
-            if monthly_opt:
-                driver.execute_script("arguments[0].click();", monthly_opt)
+            print(f"[DEBUG] combo val={val!r} placeholder={placeholder!r} → {opt_texts}")
+            m = next((o for o in opts if MONTHLY in (o.text or '')), None)
+            if m:
+                driver.execute_script("arguments[0].click();", m)
                 time.sleep(1.5)
                 print("[FinBot] 'חודשי' נבחר (combobox)")
                 return True
@@ -265,22 +298,18 @@ def _try_monthly_view(driver):
         except Exception as e:
             print(f"[DEBUG] combo error: {e}")
 
-    # ── אסטרטגיה 3: כל אלמנט בעמוד עם טקסט 'חודשי' (radio / button / tab) ───
-    try:
-        all_monthly = driver.find_elements(
-            By.XPATH, "//*[normalize-space(text())='חודשי']")
-        print(f"[DEBUG] כל אלמנטי 'חודשי' בדף: {len(all_monthly)}")
-        for el in all_monthly:
-            tag  = el.tag_name
-            cls  = el.get_attribute("class") or ""
-            role = el.get_attribute("role") or ""
-            print(f"[DEBUG] 'חודשי' → <{tag}> role={role!r} class={cls[:60]!r}")
-            driver.execute_script("arguments[0].click();", el)
-            time.sleep(1.5)
-            print(f"[FinBot] 'חודשי' נלחץ (<{tag}> role={role!r})")
-            return True
-    except Exception as e:
-        print(f"[DEBUG] element strategy failed: {e}")
+    # ── אסטרטגיה 4: דאמפ שדות הטופס לדיבוג ────────────────────────────────
+    form_dump = driver.execute_script("""
+        var res = [];
+        document.querySelectorAll('input,select,button,[role=radio],[role=tab],[role=option],[role=combobox]')
+            .forEach(function(el) {
+                var txt = el.textContent.trim().substring(0,30);
+                var val = (el.value||'').substring(0,20);
+                res.push(el.tagName+'|'+el.type+'|val='+val+'|txt='+txt+'|role='+(el.getAttribute('role')||''));
+            });
+        return res.join('\\n');
+    """)
+    print(f"[DEBUG] שדות בדף:\n{form_dump}")
 
     save_debug_screenshot(driver, "monthly_view_not_found")
     print("[WARN] לא נמצאה הגדרת 'חודשי'")
