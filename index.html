@@ -326,6 +326,33 @@
   .monthly-bar.zero { background: #e5e7eb; }
   .monthly-bar-label { font-size: 9px; color: var(--muted); margin-top: 3px; }
 
+  /* ── Fetch progress bar ── */
+  #fetch-progress {
+    display: none;
+    margin-top: 12px;
+  }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .progress-track {
+    height: 8px;
+    background: var(--border);
+    border-radius: 100px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--navy) 0%, var(--navy-light) 60%, var(--gold) 100%);
+    border-radius: 100px;
+    transition: width 0.25s ease-out;
+  }
+
   @media (max-width: 560px) {
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
     header { padding: 20px; }
@@ -363,10 +390,17 @@
         </div>
       </div>
       <div style="margin-top:14px">
-        <button class="btn-generate" style="max-width:280px;height:44px;font-size:14px" onclick="fetchFromFinbot()">
+        <button class="btn-generate" id="btn-fetch" style="max-width:280px;height:44px;font-size:14px" onclick="fetchFromFinbot()">
           <span class="spinner"></span>
           <span class="btn-text">⬇ שלוף נתונים מ-FinBot</span>
         </button>
+      </div>
+      <div id="fetch-progress">
+        <div class="progress-label">
+          <span id="progress-text">מתחבר...</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
       </div>
       <div class="status" id="finbot-status"></div>
 
@@ -619,6 +653,69 @@ function setStatus(msg, type) {
 // ── FinBot integration ─────────────────────────────────────────
 let finbotClients = [];
 let _lastFetchYear = '2025';
+let _progressInterval = null;
+let _progressValue = 0;
+
+const PROGRESS_STEPS = [
+  { at:  5, label: 'מתחבר לFinBot...' },
+  { at: 20, label: 'כניסה למערכת...' },
+  { at: 38, label: 'נכנס לדוח רווח והפסד...' },
+  { at: 52, label: 'בוחר לקוח ושנה...' },
+  { at: 65, label: 'מגדיר תצוגה חודשית...' },
+  { at: 78, label: 'טוען דוח...' },
+  { at: 90, label: 'מנתח תקופות...' },
+];
+
+function startProgress() {
+  _progressValue = 0;
+  const bar   = document.getElementById('progress-fill');
+  const pct   = document.getElementById('progress-pct');
+  const label = document.getElementById('progress-text');
+  const wrap  = document.getElementById('fetch-progress');
+  const btn   = document.getElementById('btn-fetch');
+
+  wrap.style.display = 'block';
+  btn.classList.add('loading');
+  btn.disabled = true;
+  bar.style.width = '0%';
+  pct.textContent = '0%';
+  label.textContent = 'מתחבר...';
+
+  _progressInterval = setInterval(() => {
+    // לוגריתמי: מתקדם מהר בהתחלה, מאט בסוף
+    const remaining = 97 - _progressValue;
+    const step = Math.max(0.4, remaining * 0.022);
+    _progressValue = Math.min(97, _progressValue + step);
+
+    const rounded = Math.round(_progressValue);
+    bar.style.width = rounded + '%';
+    pct.textContent = rounded + '%';
+
+    // עדכן תווית לפי שלב נוכחי
+    const step_label = [...PROGRESS_STEPS].reverse().find(s => _progressValue >= s.at);
+    if (step_label) label.textContent = step_label.label;
+  }, 220);
+}
+
+function stopProgress(success) {
+  clearInterval(_progressInterval);
+  _progressInterval = null;
+
+  const bar   = document.getElementById('progress-fill');
+  const pct   = document.getElementById('progress-pct');
+  const label = document.getElementById('progress-text');
+  const wrap  = document.getElementById('fetch-progress');
+  const btn   = document.getElementById('btn-fetch');
+
+  bar.style.width = '100%';
+  pct.textContent = '100%';
+  label.textContent = success ? 'הושלם!' : 'נכשל';
+
+  btn.classList.remove('loading');
+  btn.disabled = false;
+
+  setTimeout(() => { wrap.style.display = 'none'; }, 1400);
+}
 
 async function fetchFromFinbot() {
   const selectEl  = document.getElementById('finbot_client');
@@ -636,9 +733,9 @@ async function fetchFromFinbot() {
     return;
   }
 
-  status.textContent = `⏳ שולף נתונים עבור "${bizName || dataId}"... (כ-30 שניות)`;
-  status.className = 'status loading';
+  status.className = 'status';
   document.getElementById('period-selector').style.display = 'none';
+  startProgress();
 
   try {
     // תמיד קורא fetch_monthly — מחזיר גם נתונים שנתיים וגם חודשיים
@@ -649,6 +746,8 @@ async function fetchFromFinbot() {
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+
+    stopProgress(true);
 
     const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
     set('business_name', data.business_name);
@@ -673,6 +772,7 @@ async function fetchFromFinbot() {
     }
     status.className = 'status success';
   } catch(e) {
+    stopProgress(false);
     status.textContent = `❌ שגיאה: ${e.message}`;
     status.className = 'status error';
   }

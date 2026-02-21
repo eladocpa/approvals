@@ -354,6 +354,7 @@ def parse_monthly_income(html):
                 return values
 
     # אסטרטגיה 2: fallback טקסטואלי
+    # מחזיר ערכים רק אם נמצאו >= 12 — פחות מ-12 סימן שהדוח אינו במצב חודשי
     print("[FinBot] לא נמצאה שורת טבלה — מנסה fallback טקסטואלי")
     text = soup.get_text(separator="\n")
     lines = [l.strip() for l in text.split("\n") if l.strip()]
@@ -363,9 +364,9 @@ def parse_monthly_income(html):
             collected = []
             for j in range(max(0, i - 2), min(len(lines), i + 20)):
                 for n in re.findall(r'\([\d,]+\)|-?[\d,]+', lines[j]):
-                    val = parse_cell(n)
-                    if val is not None:
-                        collected.append(val)
+                    v = parse_cell(n)
+                    if v is not None and abs(v) >= 100:   # מסנן מספרי עמוד/אינדקס
+                        collected.append(v)
             print(f"[FinBot] fallback — {len(collected)} ערכים: {collected[:13]}")
             if len(collected) >= 12:
                 monthly = collected[:12]
@@ -374,8 +375,8 @@ def parse_monthly_income(html):
                     if diff < max(abs(sum(monthly)) * 0.05, 500):
                         return monthly
                 return monthly
-            elif 3 <= len(collected) < 12:
-                return collected
+            # פחות מ-12: הדוח כנראה אינו במצב חודשי — לא להחזיר נתונים שגויים
+            print(f"[WARN] fallback — רק {len(collected)} ערכים, הדוח לא במצב חודשי")
 
     print("[WARN] לא נמצאו נתוני רווח/הפסד חודשיים")
     return []
