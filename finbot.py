@@ -188,7 +188,7 @@ def _select_year(driver, year):
                     if year in o.text:
                         o.click()
                         time.sleep(1.5)
-                        print(f"[FinBot] שנה {year} נבחרה ע"י DOWN (ניסיון {attempt+1})")
+                        print(f"[FinBot] שנה {year} נבחרה ע''י DOWN (ניסיון {attempt+1})")
                         return True
             except Exception as e:
                 print(f"[WARN] ניסיון {attempt+1} בחירת שנה נכשל: {e}")
