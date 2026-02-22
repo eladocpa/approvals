@@ -3,9 +3,9 @@
 הפעל: python server.py  |  פתח: http://localhost:5000
 """
 from flask import Flask, request, send_file, jsonify
-from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from pypdf import PdfReader, PdfWriter
 from bidi.algorithm import get_display
 import io, os, datetime, re, sys, json
@@ -25,32 +25,36 @@ TAMAT_PDF     = os.path.join(BASE_DIR, "templates", "daycare_daycare-subsidies-2
 MORTGAGE_PDF  = os.path.join(BASE_DIR, "templates", "אישורי משכנתא.pdf")
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 
-SCALE  = 3
 PDF_W  = 595.32
 PDF_H  = 841.92
-IMG_W  = int(PDF_W * SCALE)
-IMG_H  = int(PDF_H * SCALE)
 
+_FONT_NAME = "Helvetica"   # fallback
 
-def find_font(size):
-    for p in [
-        # Hebrew-capable fonts first
-        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
-        # Windows (Arial has Hebrew support)
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\Arial.ttf",
-        r"C:\Windows\Fonts\tahoma.ttf",
-        # Fallback
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]:
-        if os.path.exists(p):
-            return ImageFont.truetype(p, size)
-    return ImageFont.load_default()
+def _register_font():
+    global _FONT_NAME
+    candidates = [
+        ("/usr/share/fonts/truetype/freefont/FreeSans.ttf",  "FreeSans"),
+        ("/usr/share/fonts/truetype/freefont/FreeSerif.ttf", "FreeSerif"),
+        (r"C:\Windows\Fonts\arial.ttf",   "Arial"),
+        (r"C:\Windows\Fonts\Arial.ttf",   "Arial"),
+        (r"C:\Windows\Fonts\tahoma.ttf",  "Tahoma"),
+    ]
+    for path, name in candidates:
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont(name, path))
+                _FONT_NAME = name
+                print(f"[PDF] גופן: {name}")
+                return
+            except Exception as e:
+                print(f"[PDF] שגיאה בטעינת {name}: {e}")
+    print("[PDF] משתמש ב-Helvetica (ללא עברית)")
+
+_register_font()
 
 
 def prepare_text(text):
-    """Convert Hebrew text to correct visual order for PIL using BiDi algorithm."""
+    """BiDi: המרה מסדר לוגי לסדר ויזואלי עבור ציור LTR ב-reportlab."""
     if not text:
         return ""
     text = str(text).strip()
@@ -68,26 +72,17 @@ def fill_pdf(template_path, fields):
 
     for page_idx, page in enumerate(reader.pages, start=1):
         if page_idx in by_page:
-            overlay = Image.new("RGBA", (IMG_W, IMG_H), (0, 0, 0, 0))
-            draw    = ImageDraw.Draw(overlay)
+            packet = io.BytesIO()
+            c = rl_canvas.Canvas(packet, pagesize=(PDF_W, PDF_H))
             for f in by_page[page_idx]:
                 txt = prepare_text(f.get("text", ""))
                 if not txt:
                     continue
-                font = find_font(int(f.get("fs", 12) * SCALE))
-                draw.text(
-                    (int(f["x_right"] * SCALE), int(f["y_top"] * SCALE)),
-                    txt, font=font, fill=(0, 0, 0, 255), anchor="rt"
-                )
-
-            png_buf = io.BytesIO()
-            overlay.save(png_buf, format="PNG")
-            png_buf.seek(0)
-
-            packet = io.BytesIO()
-            c = rl_canvas.Canvas(packet, pagesize=(PDF_W, PDF_H))
-            c.drawImage(ImageReader(png_buf), 0, 0,
-                        width=PDF_W, height=PDF_H, mask="auto")
+                fs = f.get("fs", 12)
+                c.setFont(_FONT_NAME, fs)
+                # reportlab: y=0 at bottom; y_top is distance from page top
+                rl_y = PDF_H - f["y_top"] - fs
+                c.drawRightString(f["x_right"], rl_y, txt)
             c.save()
             packet.seek(0)
             page.merge_page(PdfReader(packet).pages[0])

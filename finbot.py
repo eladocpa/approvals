@@ -154,22 +154,45 @@ def _select_year(driver, year):
         if "לקוח" in placeholder or "חברה" in placeholder or "מ.ע" in placeholder:
             continue
         val = combo.get_attribute("value") or ""
-        if val.isdigit() and len(val) == 4:
-            if val == year:
-                print(f"[FinBot] שנה {year} כבר בחורה")
-                return True
-            combo.click()
+        if not (val.isdigit() and len(val) == 4):
+            continue
+
+        if val == year:
+            print(f"[FinBot] שנה {year} כבר בחורה")
+            return True
+
+        # נסה ללחוץ ולבחור את השנה
+        for attempt in range(2):
+            try:
+                combo.click()
+                time.sleep(0.8)
+                # בחר הכל ומחק
+                combo.send_keys(Keys.CONTROL + "a")
+                time.sleep(0.3)
+                combo.send_keys(Keys.DELETE)
+                time.sleep(0.3)
+                combo.send_keys(year)
+                time.sleep(2)
+                opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+                for o in opts:
+                    if year in o.text:
+                        o.click()
+                        time.sleep(1.5)
+                        print(f"[FinBot] שנה {year} נבחרה (ניסיון {attempt+1})")
+                        return True
+                # אם לא נמצאו אפשרויות — נסה Keys.DOWN לפתיחת הרשימה
+                combo.send_keys(Keys.DOWN)
+                time.sleep(1.5)
+                opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
+                for o in opts:
+                    if year in o.text:
+                        o.click()
+                        time.sleep(1.5)
+                        print(f"[FinBot] שנה {year} נבחרה ע"י DOWN (ניסיון {attempt+1})")
+                        return True
+            except Exception as e:
+                print(f"[WARN] ניסיון {attempt+1} בחירת שנה נכשל: {e}")
             time.sleep(1)
-            combo.send_keys(Keys.CONTROL + "a")
-            combo.send_keys(year)
-            time.sleep(1.5)
-            opts = driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
-            for o in opts:
-                if year in o.text:
-                    o.click()
-                    time.sleep(1.5)
-                    print(f"[FinBot] שנה {year} נבחרה")
-                    return True
 
     print(f"[WARN] לא נמצא קומבובוקס לשנה — ממשיך עם ברירת מחדל")
     return False
