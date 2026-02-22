@@ -12,12 +12,14 @@ import io, os, datetime, re, sys, json
 
 # FinBot integration (optional - only if finbot.py exists)
 FINBOT_AVAILABLE = False
+_FINBOT_ERROR = ""
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import finbot as _finbot
     FINBOT_AVAILABLE = True
-except Exception:
-    pass
+except Exception as _e:
+    _FINBOT_ERROR = str(_e)
+    print(f"[WARN] finbot לא זמין: {_e}")
 
 app = Flask(__name__)
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
@@ -174,7 +176,7 @@ def mortgage_v2_fields(d):
 @app.route("/clients")
 def get_clients():
     if not FINBOT_AVAILABLE:
-        return jsonify({"error": "finbot לא זמין — בדוק FINBOT_USERNAME/FINBOT_PASSWORD"}), 503
+        return jsonify({"error": f"finbot לא זמין: {_FINBOT_ERROR}"}), 503
     try:
         clients = _finbot.get_clients()
         return jsonify({"clients": clients})
