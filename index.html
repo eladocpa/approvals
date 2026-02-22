@@ -358,6 +358,63 @@
     header { padding: 20px; }
     .container { padding: 0 12px 40px; }
   }
+
+  /* ── Settings button & modal ── */
+  .settings-btn {
+    margin-right: auto;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.2);
+    color: var(--white);
+    border-radius: 8px;
+    width: 38px; height: 38px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .settings-btn:hover { background: rgba(255,255,255,.22); }
+
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(10,25,50,.55);
+    z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+
+  .modal-box {
+    background: var(--white);
+    border-radius: 16px;
+    padding: 32px 28px 24px;
+    width: 440px; max-width: 95vw;
+    box-shadow: var(--shadow-lg);
+    direction: rtl;
+  }
+  .modal-box h2 {
+    font-size: 18px; font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal-actions {
+    display: flex; gap: 10px; margin-top: 24px;
+  }
+  .modal-actions button {
+    flex: 1; padding: 11px;
+    border-radius: 8px; border: none;
+    font-family: 'Heebo', sans-serif;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: opacity .2s;
+  }
+  .modal-actions .btn-save {
+    background: var(--navy); color: var(--white);
+  }
+  .modal-actions .btn-cancel {
+    background: var(--border); color: var(--text);
+  }
+  .modal-actions button:hover { opacity: .87; }
 </style>
 </head>
 <body>
@@ -368,7 +425,37 @@
     <h1>מחולל אישורים פיננסיים</h1>
     <p>מילוי אוטומטי של טפסים רשמיים · תמ"ת ומשכנתא</p>
   </div>
+  <button class="settings-btn" onclick="openSettings()" title="הגדרות רואה חשבון">⚙️</button>
 </header>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal-box">
+    <h2>⚙️ פרטי רואה החשבון / יועץ המס</h2>
+    <div class="grid grid-2">
+      <div class="field">
+        <label>שם מלא *</label>
+        <input id="s_accountant_name" type="text" placeholder="ישראל ישראלי">
+      </div>
+      <div class="field">
+        <label>מספר רישיון</label>
+        <input id="s_license_number" type="text" placeholder="12345">
+      </div>
+      <div class="field">
+        <label>טלפון</label>
+        <input id="s_phone" type="text" placeholder="052-1234567">
+      </div>
+      <div class="field">
+        <label>כתובת</label>
+        <input id="s_address" type="text" placeholder="הרצל 1, תל אביב">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-save" onclick="saveSettings()">💾 שמור הגדרות</button>
+      <button class="btn-cancel" onclick="closeSettings()">ביטול</button>
+    </div>
+  </div>
+</div>
 
 <div class="container">
   <div class="accent-bar"></div>
@@ -753,6 +840,7 @@ async function fetchFromFinbot() {
     set('business_name', data.business_name);
     set('client_name',   data.owner_name);
     set('vat_number',    data.vat_number);
+    set('client_id',     data.vat_number);   // ת.ז. = מספר עוסק
     set('turnover',      data.turnover);
     set('net_income',    data.net_income);
 
@@ -832,8 +920,72 @@ function selectPeriod(period, year, clickedBtn) {
   set('total_income', period.total.toLocaleString());
 }
 
-// טען לקוחות ברקע בטעינת הדף
+// ── Settings (accountant details) ───────────────────────────────
+function openSettings() {
+  // sync main-form values into modal before opening
+  ['accountant_name','license_number','phone','address'].forEach(k => {
+    const main = document.getElementById(k);
+    const modal = document.getElementById('s_' + k);
+    if (main && modal) modal.value = main.value;
+  });
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+async function saveSettings() {
+  const data = {
+    accountant_name: document.getElementById('s_accountant_name').value.trim(),
+    license_number:  document.getElementById('s_license_number').value.trim(),
+    phone:           document.getElementById('s_phone').value.trim(),
+    address:         document.getElementById('s_address').value.trim(),
+  };
+  await fetch('/settings', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  });
+  _applySettings(data);
+  closeSettings();
+}
+
+function _applySettings(data) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  set('accountant_name', data.accountant_name);
+  set('license_number',  data.license_number);
+  set('phone',           data.phone);
+  set('address',         data.address);
+}
+
+async function _loadSettings() {
+  try {
+    const res  = await fetch('/settings');
+    const data = await res.json();
+    _applySettings(data);
+    // sync into modal fields too
+    ['accountant_name','license_number','phone','address'].forEach(k => {
+      const modal = document.getElementById('s_' + k);
+      if (modal && data[k]) modal.value = data[k];
+    });
+  } catch(e) { /* אין הגדרות שמורות */ }
+}
+
+// ── Sync: client_id ↔ vat_number ────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const vatEl = document.getElementById('vat_number');
+  const idEl  = document.getElementById('client_id');
+  if (vatEl && idEl) {
+    vatEl.addEventListener('input', () => { idEl.value = vatEl.value; });
+    idEl.addEventListener('input',  () => { vatEl.value = idEl.value; });
+  }
+});
+
+// טען לקוחות + הגדרות ברקע בטעינת הדף
 window.addEventListener('load', () => {
+  _loadSettings();
+
   const select = document.getElementById('finbot_client');
   fetch('/clients').then(r => r.json()).then(data => {
     finbotClients = data.clients || [];

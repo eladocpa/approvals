@@ -745,23 +745,32 @@ def fetch_monthly_pnl(data_id, year="2025", biz_name=""):
         time.sleep(2)
         save_debug_screenshot(driver, "03_year_selected")
 
-        # 4. שנה 'רמת פרוט' ל-'חודשי' — חייב להיות אחרי בחירת לקוח+שנה
-        monthly_changed = _try_monthly_view(driver)
-        save_debug_screenshot(driver, "04_monthly_view")
-
-        # 5. טעינת הדוח — לחץ כפתור אם קיים, אחרת המתן לטעינה אוטומטית
+        # 4. טעינת הדוח השנתי — לחץ כפתור אם קיים, אחרת המתן לטעינה אוטומטית
         btn_clicked = _click_load(driver)
         if not btn_clicked:
-            # אין כפתור — האפליקציה טוענת אוטומטית לאחר שינוי ההגדרות
-            print("[FinBot] אין כפתור — ממתין לטעינה אוטומטית")
+            print("[FinBot] אין כפתור — ממתין לטעינה אוטומטית (שנתי)")
             time.sleep(6)
-        save_debug_screenshot(driver, "05_report_loaded")
+        save_debug_screenshot(driver, "04_annual_report_loaded")
 
-        # 6. נתח
-        html   = driver.page_source
-        result = parse_report(html)
+        # 5. נתח HTML שנתי לפני מעבר לתצוגה חודשית
+        annual_html = driver.page_source
+        result = parse_report(annual_html)
         result["year"] = year
+        print(f"[FinBot] נתונים שנתיים: {result}")
 
+        # 6. שנה 'רמת פרוט' ל-'חודשי'
+        monthly_changed = _try_monthly_view(driver)
+        save_debug_screenshot(driver, "05_monthly_view")
+
+        # 7. המתן לטעינה אוטומטית של הדוח החודשי
+        btn_clicked2 = _click_load(driver)
+        if not btn_clicked2:
+            print("[FinBot] אין כפתור — ממתין לטעינה אוטומטית (חודשי)")
+            time.sleep(6)
+        save_debug_screenshot(driver, "06_monthly_report_loaded")
+
+        # 8. נתח HTML חודשי
+        html    = driver.page_source
         monthly = parse_monthly_income(html)
         result["monthly_income"] = monthly
         if monthly:

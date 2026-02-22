@@ -8,7 +8,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib.utils import ImageReader
 from pypdf import PdfReader, PdfWriter
 from bidi.algorithm import get_display
-import io, os, datetime, re, sys
+import io, os, datetime, re, sys, json
 
 # FinBot integration (optional - only if finbot.py exists)
 FINBOT_AVAILABLE = False
@@ -20,9 +20,10 @@ except Exception:
     pass
 
 app = Flask(__name__)
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-TAMAT_PDF    = os.path.join(BASE_DIR, "templates", "daycare_daycare-subsidies-2024-2025_appendix-4-support-tests.pdf")
-MORTGAGE_PDF = os.path.join(BASE_DIR, "templates", "אישורי משכנתא.pdf")
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+TAMAT_PDF     = os.path.join(BASE_DIR, "templates", "daycare_daycare-subsidies-2024-2025_appendix-4-support-tests.pdf")
+MORTGAGE_PDF  = os.path.join(BASE_DIR, "templates", "אישורי משכנתא.pdf")
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 
 SCALE  = 3
 PDF_W  = 595.32
@@ -206,6 +207,24 @@ def fetch_monthly():
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/settings", methods=["GET"])
+def get_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    return jsonify({})
+
+
+@app.route("/settings", methods=["POST"])
+def save_settings():
+    data = request.json or {}
+    allowed = {"accountant_name", "license_number", "phone", "address"}
+    clean = {k: v for k, v in data.items() if k in allowed}
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(clean, f, ensure_ascii=False, indent=2)
+    return jsonify({"ok": True})
 
 
 @app.route("/")
