@@ -34,9 +34,14 @@ IMG_H  = int(PDF_H * SCALE)
 
 def find_font(size):
     for p in [
+        # Hebrew-capable fonts first
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+        # Windows (Arial has Hebrew support)
         r"C:\Windows\Fonts\arial.ttf",
         r"C:\Windows\Fonts\Arial.ttf",
         r"C:\Windows\Fonts\tahoma.ttf",
+        # Fallback
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]:
         if os.path.exists(p):
@@ -69,7 +74,7 @@ def fill_pdf(template_path, fields):
                 txt = prepare_text(f.get("text", ""))
                 if not txt:
                     continue
-                font = find_font(int(f.get("fs", 9) * SCALE))
+                font = find_font(int(f.get("fs", 12) * SCALE))
                 draw.text(
                     (int(f["x_right"] * SCALE), int(f["y_top"] * SCALE)),
                     txt, font=font, fill=(0, 0, 0, 255), anchor="rt"
