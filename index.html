@@ -326,31 +326,42 @@
   .monthly-bar.zero { background: #e5e7eb; }
   .monthly-bar-label { font-size: 9px; color: var(--muted); margin-top: 3px; }
 
-  /* ── Fetch progress bar ── */
+  /* ── Flask loader ── */
   #fetch-progress {
     display: none;
-    margin-top: 12px;
+    margin-top: 14px;
+    text-align: center;
   }
-  .progress-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
+  .flask-wrap { display: inline-block; }
+  #progress-text {
+    font-size: 12px;
     font-weight: 500;
     color: var(--muted);
-    margin-bottom: 5px;
+    margin-top: 8px;
   }
-  .progress-track {
-    height: 8px;
-    background: var(--border);
-    border-radius: 100px;
-    overflow: hidden;
+  @keyframes bubble-rise {
+    0%   { transform: translateY(0);     opacity: 0.8; }
+    100% { transform: translateY(-20px); opacity: 0;   }
   }
-  .progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--navy) 0%, var(--navy-light) 60%, var(--gold) 100%);
-    border-radius: 100px;
-    transition: width 0.25s ease-out;
+  .flask-animating .b1 { animation: bubble-rise 1.8s 0s   infinite ease-in; }
+  .flask-animating .b2 { animation: bubble-rise 1.8s 0.6s infinite ease-in; }
+  .flask-animating .b3 { animation: bubble-rise 1.8s 1.2s infinite ease-in; }
+
+  /* ── Month range selector ── */
+  .month-range-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .month-range-total {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--navy);
+    padding-bottom: 9px;
+    white-space: nowrap;
+    min-width: 130px;
   }
 
   @media (max-width: 560px) {
@@ -491,20 +502,54 @@
         </button>
       </div>
       <div id="fetch-progress">
-        <div class="progress-label">
-          <span id="progress-text">מתחבר...</span>
-          <span id="progress-pct">0%</span>
+        <div class="flask-wrap" id="flask-wrap">
+          <svg viewBox="0 0 60 80" width="58" height="77" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <clipPath id="flask-clip">
+                <path d="M21 30 L6 60 Q2 71 9 75 L51 75 Q58 71 54 60 L39 30 Z"/>
+              </clipPath>
+            </defs>
+            <!-- neck -->
+            <rect x="19" y="4" width="22" height="28" rx="2" fill="white" stroke="#0f2744" stroke-width="2.5"/>
+            <!-- rim -->
+            <rect x="15" y="2" width="30" height="7" rx="3.5" fill="#0f2744"/>
+            <!-- body -->
+            <path d="M21 30 L6 60 Q2 71 9 75 L51 75 Q58 71 54 60 L39 30 Z" fill="white" stroke="#0f2744" stroke-width="2.5"/>
+            <!-- liquid -->
+            <rect class="flask-liquid" x="0" y="75" width="60" height="0" clip-path="url(#flask-clip)" fill="#c9a84c" opacity="0.8"/>
+            <!-- bubbles -->
+            <circle class="bubble b1" cx="17" cy="67" r="2.5" fill="rgba(255,255,255,0.85)"/>
+            <circle class="bubble b2" cx="34" cy="59" r="2"   fill="rgba(255,255,255,0.85)"/>
+            <circle class="bubble b3" cx="44" cy="65" r="1.8" fill="rgba(255,255,255,0.85)"/>
+          </svg>
         </div>
-        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <div id="progress-text">מתחבר...</div>
       </div>
       <div class="status" id="finbot-status"></div>
 
-      <!-- Period selector — מוצג רק לתמ"ת אחרי שליפה חודשית -->
+      <!-- Period selector — מוצג אחרי שליפה חודשית -->
       <div id="period-selector" style="display:none; margin-top:16px; padding-top:14px; border-top:1px solid var(--border)">
         <p style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px">📊 הכנסות לפי חודש:</p>
         <div id="monthly-bars" class="monthly-bar-row"></div>
-        <p style="font-size:12px;font-weight:600;color:var(--navy);margin:10px 0 8px">בחר תקופה רצופה לאישור תמ"ת:</p>
-        <div id="periods-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+
+        <p style="font-size:12px;font-weight:600;color:var(--navy);margin:12px 0 6px">📅 בחר טווח חודשים לחישוב:</p>
+        <div class="month-range-row">
+          <div class="field" style="min-width:120px">
+            <label>מחודש</label>
+            <select id="range_from_month" onchange="updateRangeTotal()"></select>
+          </div>
+          <div class="field" style="min-width:120px">
+            <label>עד חודש</label>
+            <select id="range_to_month" onchange="updateRangeTotal()"></select>
+          </div>
+          <div class="month-range-total" id="range_total"></div>
+        </div>
+
+        <!-- תקופות מומלצות — רק לתמ"ת -->
+        <div id="tamat-periods-section" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border)">
+          <p style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:8px">⚡ תקופות מומלצות לתמ"ת:</p>
+          <div id="periods-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -723,9 +768,9 @@ function setType(type) {
   document.getElementById('dynamic-section').classList.add('visible');
   setStatus('');
 
-  // הצג/הסתר סלקטור תקופות לפי סוג אישור
-  const periodSel = document.getElementById('period-selector');
-  if (type !== 'tamat') periodSel.style.display = 'none';
+  // הצג/הסתר תקופות מומלצות לפי סוג אישור
+  const tSection = document.getElementById('tamat-periods-section');
+  if (tSection && type !== 'tamat') tSection.style.display = 'none';
 }
 
 function val(id) {
@@ -763,30 +808,25 @@ const PROGRESS_STEPS = [
 
 function startProgress() {
   _progressValue = 0;
-  const bar   = document.getElementById('progress-fill');
-  const pct   = document.getElementById('progress-pct');
-  const label = document.getElementById('progress-text');
-  const wrap  = document.getElementById('fetch-progress');
-  const btn   = document.getElementById('btn-fetch');
+  const liquid = document.querySelector('.flask-liquid');
+  const label  = document.getElementById('progress-text');
+  const wrap   = document.getElementById('fetch-progress');
+  const btn    = document.getElementById('btn-fetch');
+  const flask  = document.getElementById('flask-wrap');
 
   wrap.style.display = 'block';
   btn.classList.add('loading');
   btn.disabled = true;
-  bar.style.width = '0%';
-  pct.textContent = '0%';
   label.textContent = 'מתחבר...';
+  if (flask)  flask.classList.add('flask-animating');
+  if (liquid) { liquid.setAttribute('y', '75'); liquid.setAttribute('height', '0'); }
 
   _progressInterval = setInterval(() => {
-    // לוגריתמי: מתקדם מהר בהתחלה, מאט בסוף
     const remaining = 97 - _progressValue;
-    const step = Math.max(0.4, remaining * 0.022);
-    _progressValue = Math.min(97, _progressValue + step);
-
-    const rounded = Math.round(_progressValue);
-    bar.style.width = rounded + '%';
-    pct.textContent = rounded + '%';
-
-    // עדכן תווית לפי שלב נוכחי
+    _progressValue  = Math.min(97, _progressValue + Math.max(0.4, remaining * 0.022));
+    // height 0→45 as progress 0→100
+    const h = (_progressValue / 100) * 45;
+    if (liquid) { liquid.setAttribute('y', String(75 - h)); liquid.setAttribute('height', String(h)); }
     const step_label = [...PROGRESS_STEPS].reverse().find(s => _progressValue >= s.at);
     if (step_label) label.textContent = step_label.label;
   }, 220);
@@ -796,19 +836,17 @@ function stopProgress(success) {
   clearInterval(_progressInterval);
   _progressInterval = null;
 
-  const bar   = document.getElementById('progress-fill');
-  const pct   = document.getElementById('progress-pct');
-  const label = document.getElementById('progress-text');
-  const wrap  = document.getElementById('fetch-progress');
-  const btn   = document.getElementById('btn-fetch');
+  const liquid = document.querySelector('.flask-liquid');
+  const label  = document.getElementById('progress-text');
+  const wrap   = document.getElementById('fetch-progress');
+  const btn    = document.getElementById('btn-fetch');
+  const flask  = document.getElementById('flask-wrap');
 
-  bar.style.width = '100%';
-  pct.textContent = '100%';
-  label.textContent = success ? 'הושלם!' : 'נכשל';
-
+  if (liquid) { liquid.setAttribute('y', '30'); liquid.setAttribute('height', '45'); }
+  label.textContent = success ? '✓ הושלם!' : '✗ נכשל';
   btn.classList.remove('loading');
   btn.disabled = false;
-
+  if (flask) flask.classList.remove('flask-animating');
   setTimeout(() => { wrap.style.display = 'none'; }, 1400);
 }
 
@@ -852,19 +890,25 @@ async function fetchFromFinbot() {
     set('turnover',      data.turnover);
     set('net_income',    data.net_income);
 
+    // הצג בורר חודשים אם יש נתונים חודשיים (לכל סוג אישור)
+    if (data.monthly_income && data.monthly_income.length > 0) {
+      renderMonthlyBars(data.monthly_income);
+      renderMonthRangeSelector(data.monthly_income, year);
+      document.getElementById('period-selector').style.display = 'block';
+    }
+
     if (currentType === 'tamat' && data.periods && data.periods.length > 0) {
-      // תמ"ת: הצג סלקטור תקופות
-      renderMonthlyBars(data.monthly_income || []);
       displayPeriods(data.periods, year);
-      status.textContent = `✅ נמצאו ${data.periods.length} תקופות רצופות — בחר תקופה לאישור`;
-    } else {
-      // משכנתא / ברירת מחדל: מלא נתונים שנתיים
+      status.textContent = `✅ ${data.periods.length} תקופות — בחר טווח חודשים או תקופה מומלצת`;
+    } else if (!data.monthly_income || data.monthly_income.length === 0) {
       set('total_income', data.turnover);
       set('from_year',    year);
       set('to_year',      year);
       set('from_month',   '01');
       set('to_month',     '12');
       status.textContent = `✅ נתונים נשלפו! מחזור: ${data.turnover || '—'} ₪  |  רווח: ${data.net_income || '—'} ₪`;
+    } else {
+      status.textContent = `✅ נתונים חודשיים נשלפו — בחר טווח חודשים`;
     }
     status.className = 'status success';
   } catch(e) {
@@ -895,8 +939,8 @@ function renderMonthlyBars(monthly) {
 }
 
 function displayPeriods(periods, year) {
-  const selector = document.getElementById('period-selector');
-  const list     = document.getElementById('periods-list');
+  const section = document.getElementById('tamat-periods-section');
+  const list    = document.getElementById('periods-list');
   list.innerHTML = '';
 
   periods.slice(0, 12).forEach((p, idx) => {
@@ -913,7 +957,54 @@ function displayPeriods(periods, year) {
     if (idx === 0) selectPeriod(p, year, null);
   });
 
-  selector.style.display = 'block';
+  if (section) section.style.display = 'block';
+}
+
+// ── Month range selector ────────────────────────────────────────
+let _monthlyIncome = [];
+let _fetchedYear   = '2025';
+const MONTH_NAMES_HE = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+function renderMonthRangeSelector(monthly, year) {
+  _monthlyIncome = monthly || [];
+  _fetchedYear   = year;
+  const n = _monthlyIncome.length;
+  if (n === 0) return;
+
+  const fromSel = document.getElementById('range_from_month');
+  const toSel   = document.getElementById('range_to_month');
+  if (!fromSel || !toSel) return;
+
+  fromSel.innerHTML = '';
+  toSel.innerHTML   = '';
+  for (let i = 0; i < n; i++) {
+    const name = MONTH_NAMES_HE[i] || `חודש ${i+1}`;
+    fromSel.innerHTML += `<option value="${i+1}">${name}</option>`;
+    toSel.innerHTML   += `<option value="${i+1}" ${i === n-1 ? 'selected' : ''}>${name}</option>`;
+  }
+  updateRangeTotal();
+}
+
+function updateRangeTotal() {
+  const fromSel = document.getElementById('range_from_month');
+  const toSel   = document.getElementById('range_to_month');
+  const totalEl = document.getElementById('range_total');
+  if (!fromSel || !toSel || !totalEl || !_monthlyIncome.length) return;
+
+  const from = parseInt(fromSel.value) - 1;
+  const to   = parseInt(toSel.value)   - 1;
+  if (from > to) { totalEl.textContent = 'טווח לא תקין'; return; }
+
+  const total  = _monthlyIncome.slice(from, to + 1).reduce((a, b) => a + b, 0);
+  const months = to - from + 1;
+  totalEl.textContent = `${total.toLocaleString()} ₪ (${months} חו')`;
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el !== null) el.value = v; };
+  set('total_income', total.toLocaleString());
+  set('from_month',   String(from + 1).padStart(2, '0'));
+  set('from_year',    _fetchedYear);
+  set('to_month',     String(to + 1).padStart(2, '0'));
+  set('to_year',      _fetchedYear);
 }
 
 function selectPeriod(period, year, clickedBtn) {
