@@ -10,8 +10,8 @@ MONTH_NAMES_HE = [
 ]
 
 FINBOT_URL = os.environ.get("FINBOT_URL", "https://oha.finbot-edge.co.il")
-USERNAME   = os.environ["FINBOT_USERNAME"]
-PASSWORD   = os.environ["FINBOT_PASSWORD"]
+USERNAME   = os.environ.get("FINBOT_USERNAME", "")
+PASSWORD   = os.environ.get("FINBOT_PASSWORD", "")
 
 # עמוד דוח רווח והפסד (URL קבוע — הלקוח נבחר מהדרופדאון)
 PNL_URL = FINBOT_URL + "/report/2"

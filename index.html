@@ -996,6 +996,11 @@ window.addEventListener('load', () => {
 
   const select = document.getElementById('finbot_client');
   fetch('/clients').then(r => r.json()).then(data => {
+    if (data.error) {
+      select.innerHTML = `<option value="">שגיאה: ${data.error}</option>`;
+      select.disabled = false;
+      return;
+    }
     finbotClients = data.clients || [];
     select.innerHTML = '<option value="">— בחר לקוח —</option>';
     finbotClients.forEach((c, i) => {
@@ -1006,8 +1011,8 @@ window.addEventListener('load', () => {
       select.appendChild(opt);
     });
     select.disabled = false;
-  }).catch(() => {
-    select.innerHTML = '<option value="">שגיאה בטעינת לקוחות</option>';
+  }).catch(err => {
+    select.innerHTML = `<option value="">שגיאת חיבור לשרת</option>`;
     select.disabled = false;
   });
 });

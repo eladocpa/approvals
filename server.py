@@ -173,10 +173,13 @@ def mortgage_v2_fields(d):
 
 @app.route("/clients")
 def get_clients():
+    if not FINBOT_AVAILABLE:
+        return jsonify({"error": "finbot לא זמין — בדוק FINBOT_USERNAME/FINBOT_PASSWORD"}), 503
     try:
         clients = _finbot.get_clients()
         return jsonify({"clients": clients})
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
